@@ -1,0 +1,3 @@
+{
+  "extends": "@nexo/config/tsconfig.base.json"
+}
