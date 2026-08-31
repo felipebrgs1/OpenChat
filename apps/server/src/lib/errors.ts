@@ -34,3 +34,7 @@ export function conflict(message = "Conflito.") {
 export function validation(message: string) {
   return new ApiError("VALIDATION", message, 400);
 }
+
+export function llmUpstream(message = "Falha no modelo.") {
+  return new ApiError("LLM_UPSTREAM", message, 502);
+}

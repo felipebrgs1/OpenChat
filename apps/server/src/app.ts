@@ -7,8 +7,10 @@ import { ZodError } from "zod";
 import { ApiError } from "./lib/errors";
 import { adminUserRoutes } from "./routes/admin-users";
 import { authRoutes } from "./routes/auth";
+import { conversationRoutes } from "./routes/conversations";
 import { inviteAdminRoutes, invitePublicRoutes } from "./routes/invites";
 import { meRoutes } from "./routes/me";
+import { modelRoutes } from "./routes/models";
 import { roleRoutes } from "./routes/roles";
 
 const corsOrigin = process.env.CORS_ORIGIN ?? "http://localhost:5173";
@@ -49,6 +51,8 @@ app.route("/api/invites", invitePublicRoutes);
 app.route("/api/invites", inviteAdminRoutes);
 app.route("/api/me", meRoutes);
 app.route("/api/roles", roleRoutes);
+app.route("/api/models", modelRoutes);
+app.route("/api/conversations", conversationRoutes);
 app.route("/api/admin/users", adminUserRoutes);
 
 app.notFound((c) => {

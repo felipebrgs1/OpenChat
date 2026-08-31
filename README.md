@@ -48,6 +48,8 @@ Login JWT: `Authorization: Bearer <access_token>`. Sem cookie de sessão.
 
 Por enquanto o login está desligado (`AUTH_DISABLED=true` e `VITE_AUTH_DISABLED=true`). O app entra direto como o admin bootstrap. Para religar, coloque os dois em `false`.
 
+Chat (lote 2) usa OpenRouter. Sem `OPENROUTER_API_KEY` a UI sobe, mas a geração devolve erro de upstream.
+
 ## Estrutura
 
 ```

@@ -2,7 +2,7 @@
 
 Fonte: `NEXO.md`. Este arquivo é o checklist de execução.
 
-Status: **lote 1 feito**. Testes de convite/login/me.role passam.
+Status: **lote 2 feito**. Chat isolado, allowlist e SSE.
 
 ---
 
@@ -35,13 +35,13 @@ Aceite: convite → senha → home do cargo certo. Requests autenticadas com `Au
 
 ## Lote 2 — Chat
 
-Status: bloqueado por 1
+Status: feito
 
-- [ ] conversations / messages
-- [ ] SSE OpenRouter
-- [ ] UI stream + markdown + histórico
-- [ ] allowlist de modelos
-- [ ] isolamento por user
+- [x] conversations / messages
+- [x] SSE OpenRouter
+- [x] UI stream + markdown + histórico
+- [x] allowlist de modelos
+- [x] isolamento por user
 
 Aceite: chat real, persistido, isolado.
 

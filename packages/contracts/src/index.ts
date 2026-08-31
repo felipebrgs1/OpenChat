@@ -176,3 +176,58 @@ export const patchAdminUserBodySchema = z.object({
   isAdmin: z.boolean().optional(),
 });
 export type PatchAdminUserBody = z.infer<typeof patchAdminUserBodySchema>;
+
+export const modelsResponseSchema = z.object({
+  defaultModel: z.string(),
+  fallbackModel: z.string(),
+  allowedModels: z.array(z.string()),
+});
+export type ModelsResponse = z.infer<typeof modelsResponseSchema>;
+
+export const conversationSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  model: z.string(),
+  roleIdSnapshot: z.string().uuid().nullable(),
+  archivedAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type Conversation = z.infer<typeof conversationSchema>;
+
+export const createConversationBodySchema = z.object({
+  model: z.string().min(1).optional(),
+});
+export type CreateConversationBody = z.infer<typeof createConversationBodySchema>;
+
+export const patchConversationBodySchema = z
+  .object({
+    title: z.string().min(1).optional(),
+    archived: z.boolean().optional(),
+  })
+  .refine((value) => value.title !== undefined || value.archived !== undefined, {
+    message: "Informe title ou archived.",
+  });
+export type PatchConversationBody = z.infer<typeof patchConversationBodySchema>;
+
+export const messageSchema = z.object({
+  id: z.string().uuid(),
+  conversationId: z.string().uuid(),
+  role: z.enum(["user", "assistant", "system"]),
+  content: z.string(),
+  model: z.string().nullable(),
+  promptTokens: z.number().int().nullable(),
+  completionTokens: z.number().int().nullable(),
+  costUsd: z.string().nullable(),
+  finishReason: z.string().nullable(),
+  error: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type ChatMessage = z.infer<typeof messageSchema>;
+
+export const sendMessageBodySchema = z.object({
+  content: z.string().min(1),
+  model: z.string().min(1).optional(),
+  starterId: z.string().uuid().nullable().optional(),
+});
+export type SendMessageBody = z.infer<typeof sendMessageBodySchema>;
