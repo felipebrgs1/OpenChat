@@ -289,7 +289,7 @@ function HermesLoop() {
           <Button
             onClick={() => addMem.mutate()}
             disabled={!newMem.trim() || addMem.isPending}
-            size="sm"
+            size="default"
           >
             {addMem.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
             Ensinar
