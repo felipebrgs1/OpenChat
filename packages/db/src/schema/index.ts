@@ -54,6 +54,9 @@ export const users = pgTable(
     isAdmin: boolean("is_admin").notNull().default(false),
     status: userStatusEnum("status").notNull().default("invited"),
     creditBalance: numeric("credit_balance", { precision: 12, scale: 4 }).notNull().default("1000.0000"),
+    personalPrompt: text("personal_prompt"),
+    memorySummary: text("memory_summary"),
+    autoLearn: boolean("auto_learn").notNull().default(true),
     onboardedAt: timestamp("onboarded_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -199,6 +202,20 @@ export const creditLedger = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("credit_ledger_user_created_idx").on(table.userId, table.createdAt)],
+);
+
+export const userMemories = pgTable(
+  "user_memory",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    content: text("content").notNull(),
+    source: text("source").notNull().default("manual"), // manual | auto | feedback
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("user_memory_user_created_idx").on(table.userId, table.createdAt)],
 );
 
 export const auditLogs = pgTable("audit_log", {

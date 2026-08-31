@@ -1,8 +1,10 @@
-import { patchMeBodySchema } from "@nexo/contracts";
-import { db, roleStarterPrompts, roles, users } from "@nexo/db";
-import { asc, eq } from "drizzle-orm";
+import { createMemoryBodySchema, patchMeBodySchema } from "@nexo/contracts";
+import { db, roleStarterPrompts, roles, userMemories, users } from "@nexo/db";
+import { asc, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
+import { addMemory, rebuildMemorySummary } from "../lib/memory";
+import { notFound } from "../lib/errors";
 import { parseBody } from "../lib/parse";
 import { toPublicUser, toRoleDetail } from "../lib/mappers";
 import { requireAuth, type AuthUser } from "../middleware/auth";
@@ -53,6 +55,8 @@ meRoutes.patch("/", async (c) => {
           : body.onboardedAt
             ? new Date(body.onboardedAt)
             : null,
+      personalPrompt: body.personalPrompt === undefined ? current.personalPrompt : body.personalPrompt,
+      autoLearn: body.autoLearn === undefined ? current.autoLearn : body.autoLearn,
       updatedAt: new Date(),
     })
     .where(eq(users.id, current.id))
@@ -63,4 +67,55 @@ meRoutes.patch("/", async (c) => {
   }
 
   return c.json(await loadMe(updated.id));
+});
+
+// --- loop Hermes: memória do usuário ---
+meRoutes.get("/memory", async (c) => {
+  const user = c.get("user");
+  const rows = await db
+    .select()
+    .from(userMemories)
+    .where(eq(userMemories.userId, user.id))
+    .orderBy(desc(userMemories.createdAt))
+    .limit(50);
+  return c.json({
+    memories: rows.map((r) => ({
+      id: r.id,
+      content: r.content,
+      source: r.source,
+      createdAt: r.createdAt.toISOString(),
+    })),
+    memorySummary: user.memorySummary ?? null,
+    personalPrompt: user.personalPrompt ?? null,
+    autoLearn: user.autoLearn ?? true,
+  });
+});
+
+meRoutes.post("/memory", async (c) => {
+  const user = c.get("user");
+  const body = await parseBody(createMemoryBodySchema, await c.req.json());
+  const row = await addMemory({ userId: user.id, content: body.content, source: body.source ?? "manual" });
+  if (!row) throw notFound("Falha ao salvar memória");
+  return c.json({
+    id: row.id,
+    content: row.content,
+    source: row.source,
+    createdAt: row.createdAt.toISOString(),
+  });
+});
+
+meRoutes.delete("/memory/:id", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const row = (await db.select().from(userMemories).where(eq(userMemories.id, id)))[0];
+  if (!row || row.userId !== user.id) throw notFound("Memória não encontrada.");
+  await db.delete(userMemories).where(eq(userMemories.id, id));
+  await rebuildMemorySummary(user.id);
+  return c.json({ ok: true });
+});
+
+meRoutes.post("/memory/rebuild", async (c) => {
+  const user = c.get("user");
+  const summary = await rebuildMemorySummary(user.id);
+  return c.json({ memorySummary: summary });
 });

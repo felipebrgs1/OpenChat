@@ -3,7 +3,7 @@ import {
   patchConversationBodySchema,
   sendMessageBodySchema,
 } from "@nexo/contracts";
-import { conversations, db, messages, roleStarterPrompts, roles, usageEvents } from "@nexo/db";
+import { conversations, db, messages, roleStarterPrompts, roles, usageEvents, users } from "@nexo/db";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -11,6 +11,7 @@ import { streamSSE } from "hono/streaming";
 import { notFound } from "../lib/errors";
 import { publicLlmError, streamNexoTurn } from "../lib/pi-harness";
 import { creditsFromUsd, deductCredits, getUserBalance } from "../lib/credits";
+import { maybeLearnFromTurn } from "../lib/memory";
 import { assertSelectableModel, effectiveDefaultModel, loadOrgSettings } from "../lib/org";
 import { parseBody } from "../lib/parse";
 import { assemblePrompt } from "../lib/prompt";
@@ -205,10 +206,20 @@ conversationRoutes.post("/:id/messages", async (c) => {
     .where(eq(messages.conversationId, convo.id))
     .orderBy(asc(messages.createdAt));
 
+  // loop de aprendizado Hermes: prompt do cargo (role) + prompt do usuário + memória aprendida
+  const freshUser = (await db.select().from(users).where(eq(users.id, user.id)))[0] as unknown as {
+    personalPrompt: string | null;
+    memorySummary: string | null;
+    autoLearn: boolean | null;
+  };
   const assembled = assemblePrompt({
     globalSystemPrompt: settings.globalSystemPrompt,
     role,
     history: history.filter((row) => row.id !== assistantMessage.id),
+    user: {
+      personalPrompt: freshUser?.personalPrompt ?? null,
+      memorySummary: freshUser?.memorySummary ?? null,
+    },
   });
 
   return streamSSE(c, async (stream) => {
@@ -333,6 +344,14 @@ conversationRoutes.post("/:id/messages", async (c) => {
           balanceAfter,
         }),
       });
+
+      // loop Hermes: aprende com o usuário (não bloqueia o stream)
+      void maybeLearnFromTurn({
+        userId: user.id,
+        userContent: content,
+        assistantContent: full,
+        autoLearn: freshUser?.autoLearn ?? true,
+      }).catch(() => {});
     } catch (error) {
       const message = publicLlmError(error);
       // se for BUDGET_EXCEEDED já tratado, mas em caso geral

@@ -38,6 +38,9 @@ export const publicUserSchema = z.object({
   onboardedAt: z.string().nullable(),
   image: z.string().nullable(),
   creditBalance: z.string(),
+  personalPrompt: z.string().nullable(),
+  memorySummary: z.string().nullable(),
+  autoLearn: z.boolean(),
 });
 export type PublicUser = z.infer<typeof publicUserSchema>;
 
@@ -129,10 +132,19 @@ export const patchMeBodySchema = z
   .object({
     name: z.string().min(1).optional(),
     onboardedAt: z.string().nullable().optional(),
+    personalPrompt: z.string().max(2000).nullable().optional(),
+    autoLearn: z.boolean().optional(),
   })
-  .refine((value) => value.name !== undefined || value.onboardedAt !== undefined, {
-    message: "Informe nome ou onboardedAt.",
-  });
+  .refine(
+    (value) =>
+      value.name !== undefined ||
+      value.onboardedAt !== undefined ||
+      value.personalPrompt !== undefined ||
+      value.autoLearn !== undefined,
+    {
+      message: "Informe ao menos um campo.",
+    },
+  );
 export type PatchMeBody = z.infer<typeof patchMeBodySchema>;
 
 export const createRoleBodySchema = z.object({
@@ -285,4 +297,19 @@ export const adjustCreditsBodySchema = z.object({
   reason: z.string().min(1).optional(),
 });
 export type AdjustCreditsBody = z.infer<typeof adjustCreditsBodySchema>;
+
+export const userMemorySchema = z.object({
+  id: z.string().uuid(),
+  content: z.string(),
+  source: z.string(),
+  createdAt: z.string(),
+});
+export type UserMemory = z.infer<typeof userMemorySchema>;
+
+export const createMemoryBodySchema = z.object({
+  content: z.string().min(3).max(1000),
+  source: z.enum(["manual", "feedback"]).optional(),
+});
+export type CreateMemoryBody = z.infer<typeof createMemoryBodySchema>;
+
 export type SendMessageBody = z.infer<typeof sendMessageBodySchema>;

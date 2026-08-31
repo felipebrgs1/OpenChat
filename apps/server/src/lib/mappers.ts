@@ -16,6 +16,9 @@ export function toPublicUser(row: UserRow): PublicUser {
     onboardedAt: row.onboardedAt ? row.onboardedAt.toISOString() : null,
     image: row.image,
     creditBalance: (row as unknown as { creditBalance: string | null }).creditBalance ?? "1000.0000",
+    personalPrompt: (row as unknown as { personalPrompt: string | null }).personalPrompt ?? null,
+    memorySummary: (row as unknown as { memorySummary: string | null }).memorySummary ?? null,
+    autoLearn: (row as unknown as { autoLearn: boolean | null }).autoLearn ?? true,
   };
 }
 

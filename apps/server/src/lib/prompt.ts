@@ -16,14 +16,26 @@ export function assemblePrompt(input: {
   globalSystemPrompt: string;
   role: RoleRow;
   history: MessageRow[];
+  user?: { personalPrompt?: string | null; memorySummary?: string | null };
 }) {
+  const userBlock = (() => {
+    const parts: string[] = [];
+    if (input.user?.memorySummary?.trim()) {
+      parts.push(`[MEMÓRIA DO USUÁRIO - APRENDIZADO]\n${input.user.memorySummary.trim()}`);
+    }
+    if (input.user?.personalPrompt?.trim()) {
+      parts.push(`[PROMPT DO USUÁRIO]\n${input.user.personalPrompt.trim()}`);
+    }
+    return parts.length ? parts.join("\n\n") + "\n\n" : "";
+  })();
+
   const system = `[GLOBAL SYSTEM]
 ${input.globalSystemPrompt}
 
 [CARGO]
 ${input.role.systemPrompt}
 
-[REGRAS DE SEGURANÇA]
+${userBlock}[REGRAS DE SEGURANÇA]
 ${SAFETY_RULES}`;
 
   const historyBudget = 8000;
