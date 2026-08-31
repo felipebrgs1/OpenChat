@@ -2,12 +2,13 @@
 
 Fonte: `NEXO.md`. Este arquivo é o checklist de execução.
 
-Status: **lote 0 em andamento**.
+Status: **lote 1 feito**. Testes de convite/login/me.role passam.
 
 ---
 
 ## Lote 0 — Fundação
-Status: em andamento
+
+Status: feito
 
 - [x] bun workspace + Turborepo
 - [x] `apps/web` Vite + React + TanStack Router + Tailwind v4
@@ -20,18 +21,20 @@ Status: em andamento
 Aceite: `bun run dev` sobe web :5173 e server :3001. Health 200.
 
 ## Lote 1 — Identidade e cargos
-Status: bloqueado por 0
 
-- [ ] JWT HS256 (`login` / `refresh` / `logout`) + Drizzle
-- [ ] schema user / refresh_token / role / invite / settings / audit
-- [ ] seed 7 cargos + starters + prompt global
-- [ ] login, convite, home do cargo
-- [ ] admin: usuários e cargos
-- [ ] `GET /api/me`
+Status: feito
+
+- [x] JWT HS256 (`login` / `refresh` / `logout`) + Drizzle
+- [x] schema user / refresh_token / role / invite / settings / audit
+- [x] seed 7 cargos + starters + prompt global
+- [x] login, convite, home do cargo
+- [x] admin: usuários e cargos
+- [x] `GET /api/me`
 
 Aceite: convite → senha → home do cargo certo. Requests autenticadas com `Authorization: Bearer`.
 
 ## Lote 2 — Chat
+
 Status: bloqueado por 1
 
 - [ ] conversations / messages
@@ -43,6 +46,7 @@ Status: bloqueado por 1
 Aceite: chat real, persistido, isolado.
 
 ## Lote 3 — Knowledge por cargo (sem vetor)
+
 Status: bloqueado por 2
 
 - [ ] collections + documents + vínculo cargo
@@ -53,6 +57,7 @@ Status: bloqueado por 2
 Aceite: doc de cobrança invisível para comercial.
 
 ## Lote 4 — Admin e uso
+
 Status: bloqueado por 3
 
 - [ ] usage por user/cargo/modelo
@@ -61,6 +66,7 @@ Status: bloqueado por 3
 - [ ] audit_log
 
 ## Lote 5 — RAG
+
 Status: bloqueado por 4
 
 - [ ] chunk + embedding + pgvector
@@ -69,6 +75,7 @@ Status: bloqueado por 4
 - [ ] upload md/txt/pdf
 
 ## Lote 6 — Tools / MCP
+
 Status: bloqueado por 5
 
 - [ ] tool search_knowledge
@@ -76,6 +83,7 @@ Status: bloqueado por 5
 - [ ] adapter MCP desenhado, escrita proibida
 
 ## Lote 7 — Governança
+
 Status: bloqueado por 6
 
 - [ ] budget user/cargo

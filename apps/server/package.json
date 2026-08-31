@@ -7,12 +7,15 @@
     "check-types": "tsc -b",
     "compile": "bun build --compile --minify --sourcemap --bytecode ./src/index.ts --outfile server",
     "dev": "bun run --hot src/index.ts",
-    "start": "bun run dist/index.mjs"
+    "start": "bun run dist/index.mjs",
+    "test": "bun test src/auth.test.ts"
   },
   "dependencies": {
     "@nexo/contracts": "workspace:*",
     "@nexo/db": "workspace:*",
+    "drizzle-orm": "^0.45.2",
     "hono": "^4.12.32",
+    "jose": "^6.1.3",
     "zod": "catalog:"
   },
   "devDependencies": {

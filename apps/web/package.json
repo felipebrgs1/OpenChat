@@ -11,13 +11,16 @@
     "check-types": "vite build && tsc --noEmit"
   },
   "dependencies": {
+    "@nexo/contracts": "workspace:*",
     "@nexo/ui": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/react-query": "^5.90.12",
     "@tanstack/react-router": "^1.170.18",
     "lucide-react": "catalog:",
     "next-themes": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
+    "react-markdown": "^10.1.0",
     "sonner": "catalog:",
     "zod": "catalog:"
   },

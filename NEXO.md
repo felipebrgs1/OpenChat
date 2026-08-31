@@ -50,15 +50,15 @@ O cargo não é só RBAC de tela. É **contexto operacional**.
 
 Cargos iniciais da Voz Educa. Admin pode criar outros depois.
 
-| slug | nome | para quem | o que o assistente prioriza |
-|---|---|---|---|
-| admin | Administrador | dono da instância | tudo; gestão de usuários, cargos, docs, uso |
-| diretoria | Diretoria | gestão | visão, métricas, posicionamento, decisões |
-| comercial | Comercial / CS | vendas e sucesso | argumentário, objeções, onboarding de escola |
-| cobranca | Cobrança / Financeiro | time financeiro | regras de inadimplência, cálculo, tom de cobrança |
-| suporte | Suporte | atendimento | FAQ, Wix, WhatsApp, tickets recorrentes |
-| produto | Produto / Dev | engenharia e produto | stack, decisões técnicas, runbooks |
-| novato | Novo colaborador | primeiros 30 dias | mapa da empresa + “por onde começar” |
+| slug      | nome                  | para quem            | o que o assistente prioriza                       |
+| --------- | --------------------- | -------------------- | ------------------------------------------------- |
+| admin     | Administrador         | dono da instância    | tudo; gestão de usuários, cargos, docs, uso       |
+| diretoria | Diretoria             | gestão               | visão, métricas, posicionamento, decisões         |
+| comercial | Comercial / CS        | vendas e sucesso     | argumentário, objeções, onboarding de escola      |
+| cobranca  | Cobrança / Financeiro | time financeiro      | regras de inadimplência, cálculo, tom de cobrança |
+| suporte   | Suporte               | atendimento          | FAQ, Wix, WhatsApp, tickets recorrentes           |
+| produto   | Produto / Dev         | engenharia e produto | stack, decisões técnicas, runbooks                |
+| novato    | Novo colaborador      | primeiros 30 dias    | mapa da empresa + “por onde começar”              |
 
 Regras:
 
@@ -81,25 +81,25 @@ Cada cargo tem:
 
 ## 6. Stack travado
 
-| camada | escolha | nota |
-|---|---|---|
-| monorepo | Turborepo + bun | `apps/*` + `packages/*` |
-| web | Vite + React 19 + TypeScript | SPA :5173 |
-| rotas | TanStack Router file-based | `src/routes` |
-| data client | TanStack Query | sem Redux |
-| estilo | Tailwind CSS v4 | `@tailwindcss/vite`, tokens em `@theme` |
+| camada      | escolha                       | nota                                       |
+| ----------- | ----------------------------- | ------------------------------------------ |
+| monorepo    | Turborepo + bun               | `apps/*` + `packages/*`                    |
+| web         | Vite + React 19 + TypeScript  | SPA :5173                                  |
+| rotas       | TanStack Router file-based    | `src/routes`                               |
+| data client | TanStack Query                | sem Redux                                  |
+| estilo      | Tailwind CSS v4               | `@tailwindcss/vite`, tokens em `@theme`    |
 | componentes | Base UI + CVA (`packages/ui`) | primitives shadcn ok; sem lock-in de bloco |
-| API | Hono no Bun | `apps/server` :3001 |
-| validação | Zod | compartilhada em `packages/contracts` |
-| ORM | Drizzle | `drizzle-orm/node-postgres` |
-| DB | PostgreSQL 16+ | imagem de dev: 18 |
-| auth | JWT HS256 (Bearer) | email/senha + convite; sem Better Auth |
-| LLM | OpenRouter | OpenAI-compatible |
-| streaming | SSE | `text/event-stream` |
-| files | disco local v1 | path configurável; S3 depois |
-| testes | Vitest | unit + request na API |
-| lint | Oxlint + Oxfmt | |
-| env | `.env` único na raiz | Bun/Vite/Drizzle leem da raiz |
+| API         | Hono no Bun                   | `apps/server` :3001                        |
+| validação   | Zod                           | compartilhada em `packages/contracts`      |
+| ORM         | Drizzle                       | `drizzle-orm/node-postgres`                |
+| DB          | PostgreSQL 16+                | imagem de dev: 18                          |
+| auth        | JWT HS256 (Bearer)            | email/senha + convite; sem Better Auth     |
+| LLM         | OpenRouter                    | OpenAI-compatible                          |
+| streaming   | SSE                           | `text/event-stream`                        |
+| files       | disco local v1                | path configurável; S3 depois               |
+| testes      | bun:test                      | unit + request na API                      |
+| lint        | Oxlint + Oxfmt                |                                            |
+| env         | `.env` único na raiz          | Bun/Vite/Drizzle leem da raiz              |
 
 Runtime Bun. TypeScript strict. Sem `.env` dentro de `apps/*`.
 
@@ -342,17 +342,17 @@ Códigos: `UNAUTHORIZED`, `FORBIDDEN`, `ROLE_REQUIRED`, `VALIDATION`, `NOT_FOUND
 
 ### Auth
 
-| método | path | quem |
-|---|---|---|
-| POST | `/api/auth/login` | público |
-| POST | `/api/auth/refresh` | público (refresh válido) |
-| POST | `/api/auth/logout` | logado (revoga refresh) |
-| POST | `/api/invites` | admin |
-| GET | `/api/invites` | admin |
-| POST | `/api/invites/:id/revoke` | admin |
-| POST | `/api/invites/:token/accept` | público (cria senha + tokens) |
-| GET | `/api/me` | logado |
-| PATCH | `/api/me` | logado (nome, onboarded_at) |
+| método | path                         | quem                          |
+| ------ | ---------------------------- | ----------------------------- |
+| POST   | `/api/auth/login`            | público                       |
+| POST   | `/api/auth/refresh`          | público (refresh válido)      |
+| POST   | `/api/auth/logout`           | logado (revoga refresh)       |
+| POST   | `/api/invites`               | admin                         |
+| GET    | `/api/invites`               | admin                         |
+| POST   | `/api/invites/:id/revoke`    | admin                         |
+| POST   | `/api/invites/:token/accept` | público (cria senha + tokens) |
+| GET    | `/api/me`                    | logado                        |
+| PATCH  | `/api/me`                    | logado (nome, onboarded_at)   |
 
 Login / accept / refresh devolvem:
 
@@ -361,7 +361,14 @@ Login / accept / refresh devolvem:
   "accessToken": "...",
   "refreshToken": "...",
   "expiresIn": 900,
-  "user": { "id": "...", "name": "...", "email": "...", "isAdmin": false, "roleId": "...", "status": "active" }
+  "user": {
+    "id": "...",
+    "name": "...",
+    "email": "...",
+    "isAdmin": false,
+    "roleId": "...",
+    "status": "active"
+  }
 }
 ```
 
@@ -371,24 +378,24 @@ Web manda `Authorization: Bearer` em toda request autenticada.
 
 ### Cargos
 
-| método | path | quem |
-|---|---|---|
-| GET | `/api/roles` | logado (lista pública resumida) |
-| GET | `/api/roles/:slug` | logado (o próprio por padrão; admin vê todos) |
-| POST | `/api/roles` | admin |
-| PATCH | `/api/roles/:id` | admin |
-| PUT | `/api/roles/:id/starters` | admin |
+| método | path                      | quem                                          |
+| ------ | ------------------------- | --------------------------------------------- |
+| GET    | `/api/roles`              | logado (lista pública resumida)               |
+| GET    | `/api/roles/:slug`        | logado (o próprio por padrão; admin vê todos) |
+| POST   | `/api/roles`              | admin                                         |
+| PATCH  | `/api/roles/:id`          | admin                                         |
+| PUT    | `/api/roles/:id/starters` | admin                                         |
 
 ### Chat
 
-| método | path | quem |
-|---|---|---|
-| GET | `/api/conversations` | dono |
-| POST | `/api/conversations` | logado com cargo |
-| GET | `/api/conversations/:id` | dono |
-| PATCH | `/api/conversations/:id` | dono (title, archive) |
-| GET | `/api/conversations/:id/messages` | dono |
-| POST | `/api/conversations/:id/messages` | dono — **SSE** |
+| método | path                              | quem                  |
+| ------ | --------------------------------- | --------------------- |
+| GET    | `/api/conversations`              | dono                  |
+| POST   | `/api/conversations`              | logado com cargo      |
+| GET    | `/api/conversations/:id`          | dono                  |
+| PATCH  | `/api/conversations/:id`          | dono (title, archive) |
+| GET    | `/api/conversations/:id/messages` | dono                  |
+| POST   | `/api/conversations/:id/messages` | dono — **SSE**        |
 
 Body de envio:
 
@@ -418,23 +425,23 @@ data: {"code":"LLM_UPSTREAM","message":"..."}
 
 ### Knowledge
 
-| método | path | quem |
-|---|---|---|
-| GET | `/api/knowledge` | admin; user vê só as do cargo |
-| POST | `/api/knowledge` | admin |
-| POST | `/api/knowledge/:id/documents` | admin (markdown) |
-| PATCH | `/api/knowledge/documents/:id` | admin |
-| DELETE | `/api/knowledge/documents/:id` | admin soft |
+| método | path                           | quem                          |
+| ------ | ------------------------------ | ----------------------------- |
+| GET    | `/api/knowledge`               | admin; user vê só as do cargo |
+| POST   | `/api/knowledge`               | admin                         |
+| POST   | `/api/knowledge/:id/documents` | admin (markdown)              |
+| PATCH  | `/api/knowledge/documents/:id` | admin                         |
+| DELETE | `/api/knowledge/documents/:id` | admin soft                    |
 
 ### Admin
 
-| método | path | quem |
-|---|---|---|
-| GET | `/api/admin/users` | admin |
-| PATCH | `/api/admin/users/:id` | admin (role, status, is_admin) |
-| GET | `/api/admin/usage` | admin |
-| GET | `/api/admin/settings` | admin |
-| PATCH | `/api/admin/settings` | admin |
+| método | path                   | quem                           |
+| ------ | ---------------------- | ------------------------------ |
+| GET    | `/api/admin/users`     | admin                          |
+| PATCH  | `/api/admin/users/:id` | admin (role, status, is_admin) |
+| GET    | `/api/admin/usage`     | admin                          |
+| GET    | `/api/admin/settings`  | admin                          |
+| PATCH  | `/api/admin/settings`  | admin                          |
 
 Contratos Zod vivem em `packages/contracts` e são a fonte de tipos do web e da api.
 
@@ -810,7 +817,7 @@ Sem Datadog no v1.
 
 Testes mínimos por lote:
 
-- Lote 1: invite + login + me.role
+- Lote 1: invite + login + me.role (`bun --cwd apps/server test`)
 - Lote 2: isolation de conversation + reject model
 - Lote 3: knowledge isolada por cargo
 - Lote 4: disabled user 401
