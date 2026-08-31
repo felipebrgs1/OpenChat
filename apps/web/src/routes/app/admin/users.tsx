@@ -109,6 +109,7 @@ function AdminUsersPage() {
               <th className="px-4 py-3 font-medium">Nome</th>
               <th className="px-4 py-3 font-medium">Email</th>
               <th className="px-4 py-3 font-medium">Cargo</th>
+              <th className="px-4 py-3 font-medium">Créditos</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Admin</th>
             </tr>
@@ -136,6 +137,14 @@ function AdminUsersPage() {
                       </option>
                     ))}
                   </Select>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                      {Number((row as unknown as { creditBalance: string }).creditBalance ?? "1000").toFixed(1)} cr
+                    </span>
+                    <CreditAdjust userId={row.id} />
+                  </div>
                 </td>
                 <td className="px-4 py-3">
                   <Select
@@ -173,5 +182,36 @@ function AdminUsersPage() {
         </table>
       </div>
     </section>
+  );
+}
+
+function CreditAdjust({ userId }: { userId: string }) {
+  const queryClient = useQueryClient();
+  const [amount, setAmount] = useState("");
+  const mutate = useMutation({
+    mutationFn: () =>
+      api<{ balanceAfter: string }>(`/api/credits/admin/${userId}/adjust`, {
+        method: "POST",
+        body: JSON.stringify({ amount: Number(amount), reason: "admin_adjust" }),
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      toast.success("Créditos ajustados.");
+      setAmount("");
+    },
+    onError: (e) => toast.error(e instanceof ApiRequestError ? e.message : "Falha."),
+  });
+  return (
+    <span className="flex items-center gap-1">
+      <Input
+        className="h-7 w-20 rounded-full px-2 text-xs"
+        placeholder="+100"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+      />
+      <Button size="xs" variant="ghost" className="h-7 rounded-full px-2 text-xs" disabled={!amount || mutate.isPending} onClick={() => mutate.mutate()}>
+        +
+      </Button>
+    </span>
   );
 }

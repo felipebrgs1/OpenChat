@@ -73,6 +73,8 @@ export async function seed(db = defaultDb) {
           roleId: adminRoleId,
           status: "active",
           emailVerified: true,
+          // garante 1000 créditos iniciais (1000 créditos = US$1)
+          creditBalance: (existingAdmin as unknown as { creditBalance: string | null }).creditBalance ?? "1000.0000",
           updatedAt: new Date(),
         })
         .where(eq(users.id, existingAdmin.id));
@@ -85,8 +87,18 @@ export async function seed(db = defaultDb) {
         roleId: adminRoleId,
         status: "active",
         emailVerified: true,
+        creditBalance: "1000.0000",
         onboardedAt: new Date(),
       });
+    }
+  }
+
+  // garante que usuários antigos ganhem saldo inicial e backfill do ledger
+  const allUsers = await db.select().from(users);
+  for (const u of allUsers) {
+    const bal = (u as unknown as { creditBalance: string | null }).creditBalance;
+    if (bal === null || bal === undefined) {
+      await db.update(users).set({ creditBalance: "1000.0000" }).where(eq(users.id, u.id));
     }
   }
 

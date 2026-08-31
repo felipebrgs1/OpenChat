@@ -10,6 +10,7 @@ import { streamSSE } from "hono/streaming";
 
 import { notFound } from "../lib/errors";
 import { publicLlmError, streamNexoTurn } from "../lib/pi-harness";
+import { creditsFromUsd, deductCredits, getUserBalance } from "../lib/credits";
 import { assertSelectableModel, effectiveDefaultModel, loadOrgSettings } from "../lib/org";
 import { parseBody } from "../lib/parse";
 import { assemblePrompt } from "../lib/prompt";
@@ -41,7 +42,11 @@ function toMessage(row: typeof messages.$inferSelect) {
     model: row.model,
     promptTokens: row.promptTokens,
     completionTokens: row.completionTokens,
-    costUsd: row.costUsd,
+    credits: (row as unknown as { credits: string | null }).credits ?? null,
+    tps: (row as unknown as { tps: string | null }).tps
+      ? Number((row as unknown as { tps: string }).tps)
+      : null,
+    latencyMs: (row as unknown as { latencyMs: number | null }).latencyMs ?? null,
     finishReason: row.finishReason,
     error: row.error,
     createdAt: row.createdAt.toISOString(),
@@ -115,6 +120,13 @@ conversationRoutes.patch("/:id", async (c) => {
     throw notFound("Conversa não encontrada.");
   }
   return c.json(toConversation(row));
+});
+
+conversationRoutes.delete("/:id", async (c) => {
+  const user = c.get("user");
+  const current = await loadOwned(user.id, c.req.param("id"));
+  await db.delete(conversations).where(eq(conversations.id, current.id));
+  return c.json({ ok: true });
 });
 
 conversationRoutes.get("/:id/messages", async (c) => {
@@ -209,6 +221,19 @@ conversationRoutes.post("/:id/messages", async (c) => {
       }),
     });
 
+    // saldo em créditos (1000 créditos = US$1)
+    const balanceStr = await getUserBalance(user.id);
+    const balance = parseFloat(balanceStr);
+    if (balance <= 0) {
+      const msg = `Saldo insuficiente: ${balance.toFixed(2)} créditos. Recarregue.`;
+      await db.update(messages).set({ error: msg }).where(eq(messages.id, assistantMessage.id));
+      await stream.writeSSE({
+        event: "error",
+        data: JSON.stringify({ code: "BUDGET_EXCEEDED", message: msg }),
+      });
+      return;
+    }
+
     if (!process.env.OPENROUTER_API_KEY?.trim()) {
       const error = "OPENROUTER_API_KEY ausente.";
       await db.update(messages).set({ error }).where(eq(messages.id, assistantMessage.id));
@@ -220,6 +245,7 @@ conversationRoutes.post("/:id/messages", async (c) => {
     }
 
     let full = "";
+    const startedAt = Date.now();
     try {
       const usage = await streamNexoTurn({
         userId: user.id,
@@ -242,7 +268,13 @@ conversationRoutes.post("/:id/messages", async (c) => {
         },
       });
 
+      const latencyMs = Date.now() - startedAt;
+      const completionTokens = usage.completionTokens ?? 0;
+      const tps = latencyMs > 0 ? Number(((completionTokens / latencyMs) * 1000).toFixed(2)) : 0;
       const cost = usage.costUsd !== undefined ? String(usage.costUsd) : null;
+      const credits = creditsFromUsd(usage.costUsd);
+      const creditsStr = credits.toFixed(4);
+
       await db
         .update(messages)
         .set({
@@ -251,6 +283,9 @@ conversationRoutes.post("/:id/messages", async (c) => {
           promptTokens: usage.promptTokens ?? null,
           completionTokens: usage.completionTokens ?? null,
           costUsd: cost,
+          credits: creditsStr,
+          tps: String(tps),
+          latencyMs,
           finishReason: usage.finishReason ?? "stop",
         })
         .where(eq(messages.id, assistantMessage.id));
@@ -262,7 +297,29 @@ conversationRoutes.post("/:id/messages", async (c) => {
         promptTokens: usage.promptTokens ?? 0,
         completionTokens: usage.completionTokens ?? 0,
         costUsd: cost,
+        credits: creditsStr,
+        tps: String(tps),
+        latencyMs,
       });
+
+      // debita créditos (1000 créditos = US$1) – fracionado
+      let balanceAfter: string | null = null;
+      try {
+        const deducted = await deductCredits({
+          userId: user.id,
+          costUsd: usage.costUsd ?? 0,
+          model,
+          conversationId: convo.id,
+          messageId: assistantMessage.id,
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+          tps,
+          latencyMs,
+        });
+        balanceAfter = deducted.balanceAfter;
+      } catch {
+        // não falha o done se ledger falhar
+      }
 
       await stream.writeSSE({
         event: "done",
@@ -270,11 +327,20 @@ conversationRoutes.post("/:id/messages", async (c) => {
           messageId: assistantMessage.id,
           promptTokens: usage.promptTokens ?? 0,
           completionTokens: usage.completionTokens ?? 0,
-          costUsd: usage.costUsd ?? null,
+          credits: creditsStr,
+          tps,
+          latencyMs,
+          balanceAfter,
         }),
       });
     } catch (error) {
       const message = publicLlmError(error);
+      // se for BUDGET_EXCEEDED já tratado, mas em caso geral
+      if (message.includes("BUDGET_EXCEEDED") || (error instanceof Error && (error as unknown as { code?: string }).code === "BUDGET_EXCEEDED")) {
+        await db.update(messages).set({ content: full, error: message, model }).where(eq(messages.id, assistantMessage.id));
+        await stream.writeSSE({ event: "error", data: JSON.stringify({ code: "BUDGET_EXCEEDED", message }) });
+        return;
+      }
       await db
         .update(messages)
         .set({ content: full, error: message, model })

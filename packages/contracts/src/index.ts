@@ -37,6 +37,7 @@ export const publicUserSchema = z.object({
   status: userStatusSchema,
   onboardedAt: z.string().nullable(),
   image: z.string().nullable(),
+  creditBalance: z.string(),
 });
 export type PublicUser = z.infer<typeof publicUserSchema>;
 
@@ -241,7 +242,9 @@ export const messageSchema = z.object({
   model: z.string().nullable(),
   promptTokens: z.number().int().nullable(),
   completionTokens: z.number().int().nullable(),
-  costUsd: z.string().nullable(),
+  credits: z.string().nullable(),
+  tps: z.number().nullable(),
+  latencyMs: z.number().int().nullable(),
   finishReason: z.string().nullable(),
   error: z.string().nullable(),
   createdAt: z.string(),
@@ -253,4 +256,33 @@ export const sendMessageBodySchema = z.object({
   model: z.string().min(1).optional(),
   starterId: z.string().uuid().nullable().optional(),
 });
+
+export const CREDITS_PER_USD = 1000;
+
+export const creditBalanceSchema = z.object({
+  balance: z.string(),
+});
+export type CreditBalance = z.infer<typeof creditBalanceSchema>;
+
+export const creditLedgerEntrySchema = z.object({
+  id: z.string().uuid(),
+  amount: z.string(),
+  balanceAfter: z.string(),
+  reason: z.string(),
+  model: z.string().nullable(),
+  conversationId: z.string().uuid().nullable(),
+  messageId: z.string().uuid().nullable(),
+  promptTokens: z.number().int().nullable(),
+  completionTokens: z.number().int().nullable(),
+  tps: z.number().nullable(),
+  latencyMs: z.number().int().nullable(),
+  createdAt: z.string(),
+});
+export type CreditLedgerEntry = z.infer<typeof creditLedgerEntrySchema>;
+
+export const adjustCreditsBodySchema = z.object({
+  amount: z.number(),
+  reason: z.string().min(1).optional(),
+});
+export type AdjustCreditsBody = z.infer<typeof adjustCreditsBodySchema>;
 export type SendMessageBody = z.infer<typeof sendMessageBodySchema>;

@@ -15,6 +15,7 @@ export function toPublicUser(row: UserRow): PublicUser {
     status: row.status,
     onboardedAt: row.onboardedAt ? row.onboardedAt.toISOString() : null,
     image: row.image,
+    creditBalance: (row as unknown as { creditBalance: string | null }).creditBalance ?? "1000.0000",
   };
 }
 

@@ -80,7 +80,15 @@ function AppShellInner() {
         <div className="min-h-0 flex-1">
           <ConversationList />
         </div>
-        <div className="border-t border-sidebar-border p-2">
+        <div className="border-t border-sidebar-border p-2 space-y-2">
+          {me.data?.user ? (
+            <div className="flex items-center justify-between rounded-xl bg-amber-100 px-3 py-2 text-xs dark:bg-amber-900/30">
+              <span className="font-medium text-amber-800 dark:text-amber-200">Saldo</span>
+              <span className="font-mono font-semibold text-amber-900 dark:text-amber-100">
+                {Number(me.data.user.creditBalance).toFixed(2)} créditos
+              </span>
+            </div>
+          ) : null}
           <UserMenu user={user} roleName={roleName} />
         </div>
       </aside>

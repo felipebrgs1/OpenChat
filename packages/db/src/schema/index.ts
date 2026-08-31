@@ -53,6 +53,7 @@ export const users = pgTable(
     roleId: uuid("role_id").references(() => roles.id),
     isAdmin: boolean("is_admin").notNull().default(false),
     status: userStatusEnum("status").notNull().default("invited"),
+    creditBalance: numeric("credit_balance", { precision: 12, scale: 4 }).notNull().default("1000.0000"),
     onboardedAt: timestamp("onboarded_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -142,6 +143,9 @@ export const messages = pgTable(
     promptTokens: integer("prompt_tokens"),
     completionTokens: integer("completion_tokens"),
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
+    credits: numeric("credits", { precision: 12, scale: 4 }),
+    tps: numeric("tps", { precision: 12, scale: 2 }),
+    latencyMs: integer("latency_ms"),
     finishReason: text("finish_reason"),
     error: text("error"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -163,9 +167,38 @@ export const usageEvents = pgTable(
     promptTokens: integer("prompt_tokens").notNull().default(0),
     completionTokens: integer("completion_tokens").notNull().default(0),
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
+    credits: numeric("credits", { precision: 12, scale: 4 }),
+    tps: numeric("tps", { precision: 12, scale: 2 }),
+    latencyMs: integer("latency_ms"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("usage_event_user_created_idx").on(table.userId, table.createdAt)],
+);
+
+export const creditLedger = pgTable(
+  "credit_ledger",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    amount: numeric("amount", { precision: 12, scale: 4 }).notNull(),
+    balanceAfter: numeric("balance_after", { precision: 12, scale: 4 }).notNull(),
+    reason: text("reason").notNull(),
+    model: text("model"),
+    conversationId: uuid("conversation_id").references(() => conversations.id, {
+      onDelete: "set null",
+    }),
+    messageId: uuid("message_id").references(() => messages.id, { onDelete: "set null" }),
+    promptTokens: integer("prompt_tokens"),
+    completionTokens: integer("completion_tokens"),
+    costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
+    tps: numeric("tps", { precision: 12, scale: 2 }),
+    latencyMs: integer("latency_ms"),
+    meta: jsonb("meta").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("credit_ledger_user_created_idx").on(table.userId, table.createdAt)],
 );
 
 export const auditLogs = pgTable("audit_log", {

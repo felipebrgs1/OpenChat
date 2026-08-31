@@ -38,3 +38,7 @@ export function validation(message: string) {
 export function llmUpstream(message = "Falha no modelo.") {
   return new ApiError("LLM_UPSTREAM", message, 502);
 }
+
+export function budgetExceeded(message = "Saldo insuficiente.") {
+  return new ApiError("BUDGET_EXCEEDED", message, 402);
+}

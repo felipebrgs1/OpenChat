@@ -59,6 +59,7 @@ invitePublicRoutes.post("/:token/accept", async (c) => {
         roleId: invite.roleId,
         status: "active",
         emailVerified: true,
+        creditBalance: "1000.0000",
       })
       .returning();
     if (!created) {

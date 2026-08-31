@@ -7,6 +7,7 @@ import { ZodError } from "zod";
 import { ApiError } from "./lib/errors";
 import { adminSettingsRoutes } from "./routes/admin-settings";
 import { adminUserRoutes } from "./routes/admin-users";
+import { creditRoutes } from "./routes/credits";
 import { authRoutes } from "./routes/auth";
 import { conversationRoutes } from "./routes/conversations";
 import { inviteAdminRoutes, invitePublicRoutes } from "./routes/invites";
@@ -56,6 +57,7 @@ app.route("/api/models", modelRoutes);
 app.route("/api/conversations", conversationRoutes);
 app.route("/api/admin/users", adminUserRoutes);
 app.route("/api/admin/settings", adminSettingsRoutes);
+app.route("/api/credits", creditRoutes);
 
 app.notFound((c) => {
   return c.json({ error: { code: "NOT_FOUND", message: "Não encontrado." } }, 404);

@@ -10,7 +10,10 @@ export type StreamDone = {
   messageId: string;
   promptTokens: number;
   completionTokens: number;
-  costUsd: number | null;
+  credits?: string | null;
+  tps?: number | null;
+  latencyMs?: number | null;
+  balanceAfter?: string | null;
 };
 
 export async function streamChat(input: {
@@ -82,7 +85,7 @@ function dispatchSse(
   input: {
     onMeta: (meta: StreamMeta) => void;
     onDelta: (text: string) => void;
-    onDone: (done: StreamDone) => void;
+    onDone: (done: StreamDone & Record<string, unknown>) => void;
     onError: (code: ErrorCode | "UNKNOWN", message: string) => void;
   },
 ) {

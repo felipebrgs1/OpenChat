@@ -85,7 +85,9 @@ export function ChatThread({
       model: null,
       promptTokens: null,
       completionTokens: null,
-      costUsd: null,
+      credits: null,
+      tps: null,
+      latencyMs: null,
       finishReason: null,
       error: null,
       createdAt: new Date().toISOString(),
@@ -132,11 +134,17 @@ export function ChatThread({
                     ...row,
                     promptTokens: done.promptTokens,
                     completionTokens: done.completionTokens,
-                    costUsd: done.costUsd !== null ? String(done.costUsd) : null,
+                    credits: (done.credits as string | null) ?? null,
+                    tps: (done.tps as number | null) ?? null,
+                    latencyMs: (done.latencyMs as number | null) ?? null,
                   }
                 : row,
             ),
           );
+          if (done.balanceAfter) {
+            void queryClient.invalidateQueries({ queryKey: ["me"] });
+            void queryClient.invalidateQueries({ queryKey: ["credits", "balance"] });
+          }
         },
         onError: (_code, message) => {
           setLive((current) =>
@@ -168,7 +176,19 @@ export function ChatThread({
     if (!initialPrompt || sentInitial.current || !history.isSuccess) {
       return;
     }
+    // evita duplicar no F5: se o histórico já contém essa mensagem, não reenvia
+    const alreadySent = history.data?.messages.some(
+      (m) => m.role === "user" && m.content.trim() === initialPrompt.trim(),
+    );
+    if (alreadySent) {
+      sentInitial.current = true;
+      // limpa ?prompt= da URL pra F5 não reenviar
+      window.history.replaceState(null, "", window.location.pathname);
+      return;
+    }
     sentInitial.current = true;
+    // limpa URL antes de enviar pra que um F5 durante o stream não duplique
+    window.history.replaceState(null, "", window.location.pathname);
     void send(initialPrompt, initialStarterId);
     // initial send once after history loads
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -254,7 +274,7 @@ export function ChatThread({
                     </div>
                   ) : null}
                   {!isUser && (message.content || message.model) ? (
-                    <div className="mt-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <div className="mt-2 flex flex-wrap items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                       {message.content ? (
                         <Button
                           variant="ghost"
@@ -271,9 +291,19 @@ export function ChatThread({
                           {modelLabel(message.model)}
                         </span>
                       ) : null}
-                      {me.data?.user.isAdmin && message.costUsd ? (
+                      {message.credits ? (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                          {Number(message.credits).toFixed(2)} créditos
+                        </span>
+                      ) : null}
+                      {message.tps != null ? (
                         <span className="text-[11px] text-muted-foreground">
-                          US$ {message.costUsd}
+                          {message.tps.toFixed(1)} t/s
+                        </span>
+                      ) : null}
+                      {message.latencyMs != null ? (
+                        <span className="text-[11px] text-muted-foreground">
+                          • {message.latencyMs}ms
                         </span>
                       ) : null}
                     </div>
