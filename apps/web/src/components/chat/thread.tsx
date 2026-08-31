@@ -1,13 +1,17 @@
 import type { ChatMessage, MeResponse } from "@nexo/contracts";
 import { Button } from "@nexo/ui/components/button";
-import { Textarea } from "@nexo/ui/components/textarea";
+import { cn } from "@nexo/ui/lib/utils";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, Copy, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { ChatComposer } from "@/components/chat/composer";
 import { useModel } from "@/components/model-provider";
+import { UserAvatar } from "@/components/user-avatar";
 import { api, ApiRequestError } from "@/lib/api";
 import { MarkdownBody } from "@/lib/markdown";
+import { modelLabel } from "@/lib/models";
 import { streamChat } from "@/lib/sse";
 
 export function ChatThread({
@@ -34,10 +38,30 @@ export function ChatThread({
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [slow, setSlow] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const sentInitial = useRef(false);
   const slowTimer = useRef<number | null>(null);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottom = useRef(true);
   const messages = live ?? history.data?.messages ?? [];
+  const lastMessage = messages[messages.length - 1];
+
+  useEffect(() => {
+    setLive(null);
+    sentInitial.current = false;
+    setDraft("");
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (!stickToBottom.current) {
+      return;
+    }
+    const node = scrollerRef.current;
+    if (node) {
+      node.scrollTop = node.scrollHeight;
+    }
+  }, [lastMessage?.id, lastMessage?.content, streaming, messages.length]);
 
   const send = async (content: string, starterId?: string | null) => {
     const text = content.trim();
@@ -47,6 +71,7 @@ export function ChatThread({
     setDraft("");
     setStreaming(true);
     setSlow(false);
+    stickToBottom.current = true;
     if (slowTimer.current) {
       window.clearTimeout(slowTimer.current);
     }
@@ -150,78 +175,132 @@ export function ChatThread({
   }, [history.isSuccess, initialPrompt, initialStarterId]);
 
   const lastUser = [...messages].reverse().find((row) => row.role === "user");
+  const copy = async (message: ChatMessage) => {
+    await navigator.clipboard.writeText(message.content);
+    setCopiedId(message.id);
+    window.setTimeout(
+      () => setCopiedId((current) => (current === message.id ? null : current)),
+      1500,
+    );
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-6">
-        {messages.length === 0 && !streaming ? (
-          <p className="text-sm text-muted-foreground">Escreva no campo abaixo para começar.</p>
-        ) : null}
-        {messages.map((message) => (
-          <article key={message.id} className="max-w-3xl">
-            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {message.role === "user" ? "Você" : "Nexo"}
-            </p>
-            {message.role === "assistant" ? (
-              <MarkdownBody content={message.content || (streaming ? "▍" : "")} />
-            ) : (
-              <p className="text-sm">{message.content}</p>
-            )}
-            {message.error ? (
-              <div className="mt-2 flex items-center gap-2 text-xs text-destructive">
-                <span>{message.error}</span>
-                {lastUser ? (
-                  <Button variant="ghost" onClick={() => void send(lastUser.content)}>
-                    Tentar de novo
-                  </Button>
-                ) : null}
-              </div>
-            ) : null}
-            <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-              {message.model ? <span>{message.model}</span> : null}
-              {me.data?.user.isAdmin && message.costUsd ? <span>US$ {message.costUsd}</span> : null}
-              {message.content ? (
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => void navigator.clipboard.writeText(message.content)}
-                >
-                  Copiar
-                </Button>
-              ) : null}
-            </div>
-          </article>
-        ))}
-        {slow && streaming ? <p className="text-xs text-muted-foreground">ainda gerando…</p> : null}
-      </div>
-      <form
-        className="border-t p-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void send(draft);
+      <div
+        ref={scrollerRef}
+        className="min-h-0 flex-1 overflow-y-auto"
+        onScroll={(event) => {
+          const node = event.currentTarget;
+          stickToBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80;
         }}
       >
-        <div className="mx-auto flex max-w-3xl gap-2">
-          <Textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="Pergunte ao Nexo"
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void send(draft);
-              }
-            }}
-          />
-          {streaming ? (
-            <Button type="button" variant="outline" onClick={() => abortRef.current?.abort()}>
-              Parar
-            </Button>
-          ) : (
-            <Button type="submit">Enviar</Button>
-          )}
+        <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-6 px-4 py-8 sm:px-6">
+          {messages.length === 0 && !streaming ? (
+            <div className="m-auto max-w-md text-center">
+              <h2 className="text-2xl font-semibold tracking-tight">Como posso ajudar?</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Escreva abaixo. O assistente usa o contexto do seu cargo.
+              </p>
+            </div>
+          ) : null}
+          {messages.map((message) => {
+            const isUser = message.role === "user";
+            const isLastAssistant =
+              !isUser && messages[messages.length - 1]?.id === message.id && streaming;
+            return (
+              <article
+                key={message.id}
+                className={cn("group flex w-full gap-3", isUser ? "justify-end" : "justify-start")}
+              >
+                {isUser ? null : (
+                  <span className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground text-[11px] font-semibold text-background">
+                    N
+                  </span>
+                )}
+                <div className={cn("min-w-0", isUser ? "max-w-[85%] sm:max-w-[72%]" : "flex-1")}>
+                  {isUser ? (
+                    <div className="rounded-3xl bg-muted px-4 py-2.5 text-[15px] leading-6">
+                      {message.content}
+                    </div>
+                  ) : (
+                    <div>
+                      {message.content ? <MarkdownBody content={message.content} /> : null}
+                      {isLastAssistant && !message.content ? (
+                        <span className="inline-flex gap-1 py-2">
+                          <span className="size-1.5 animate-bounce rounded-full bg-foreground/70 [animation-delay:-0.2s]" />
+                          <span className="size-1.5 animate-bounce rounded-full bg-foreground/70 [animation-delay:-0.1s]" />
+                          <span className="size-1.5 animate-bounce rounded-full bg-foreground/70" />
+                        </span>
+                      ) : null}
+                      {isLastAssistant && message.content ? (
+                        <span className="ml-0.5 inline-block h-4 w-[2px] translate-y-0.5 animate-pulse bg-foreground" />
+                      ) : null}
+                    </div>
+                  )}
+                  {message.error ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-destructive">
+                      <span>{message.error}</span>
+                      {lastUser ? (
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          className="rounded-full"
+                          onClick={() => void send(lastUser.content)}
+                        >
+                          <RotateCcw className="size-3" />
+                          Tentar de novo
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {!isUser && (message.content || message.model) ? (
+                    <div className="mt-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      {message.content ? (
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="rounded-full"
+                          onClick={() => void copy(message)}
+                          aria-label="Copiar"
+                        >
+                          {copiedId === message.id ? <Check /> : <Copy />}
+                        </Button>
+                      ) : null}
+                      {message.model ? (
+                        <span className="px-1 text-[11px] text-muted-foreground">
+                          {modelLabel(message.model)}
+                        </span>
+                      ) : null}
+                      {me.data?.user.isAdmin && message.costUsd ? (
+                        <span className="text-[11px] text-muted-foreground">
+                          US$ {message.costUsd}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+                {isUser ? (
+                  <UserAvatar
+                    name={me.data?.user.name}
+                    email={me.data?.user.email}
+                    className="mt-0.5"
+                  />
+                ) : null}
+              </article>
+            );
+          })}
+          {slow && streaming ? (
+            <p className="text-center text-xs text-muted-foreground">ainda gerando…</p>
+          ) : null}
         </div>
-      </form>
+      </div>
+      <ChatComposer
+        value={draft}
+        onChange={setDraft}
+        onSubmit={() => void send(draft)}
+        onStop={() => abortRef.current?.abort()}
+        streaming={streaming}
+      />
     </div>
   );
 }

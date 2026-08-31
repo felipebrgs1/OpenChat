@@ -1,6 +1,5 @@
 import type { Conversation, MeResponse } from "@nexo/contracts";
 import { Button } from "@nexo/ui/components/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@nexo/ui/components/card";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -38,7 +37,11 @@ function HomePage() {
   });
 
   if (me.isLoading) {
-    return <div className="p-8 text-sm text-muted-foreground">Carregando cargo…</div>;
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        Carregando cargo…
+      </div>
+    );
   }
 
   const role = me.data?.role;
@@ -46,9 +49,9 @@ function HomePage() {
 
   if (!role || !user?.roleId) {
     return (
-      <section className="mx-auto max-w-xl px-8 py-16">
+      <section className="mx-auto flex h-full max-w-lg flex-col justify-center px-8">
         <h1 className="text-2xl font-semibold tracking-tight">Aguarde o admin</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Peça ao admin um cargo. Sem cargo você não entra no assistente.
         </p>
       </section>
@@ -78,59 +81,68 @@ function HomePage() {
   };
 
   return (
-    <section className="mx-auto max-w-3xl space-y-8 overflow-y-auto px-8 py-10">
-      <MarkdownBody content={role.welcomeMd} />
-      <p className="text-sm text-muted-foreground">{role.description}</p>
-
-      {!onboarded ? (
-        <div className="flex items-center justify-between gap-4 border p-4">
-          <p className="text-sm">Li o texto do meu cargo e entendi o que o assistente prioriza.</p>
-          <Button disabled={onboard.isPending} onClick={() => onboard.mutate()}>
-            Entendi meu cargo
-          </Button>
+    <section className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-3xl space-y-8 px-6 py-10">
+        <div>
+          <p className="text-xs font-medium tracking-[0.14em] text-muted-foreground uppercase">
+            {role.name}
+          </p>
+          <div className="mt-3">
+            <MarkdownBody content={role.welcomeMd} />
+          </div>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">{role.description}</p>
         </div>
-      ) : null}
 
-      <div>
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">
-          Perguntas-guia
-        </h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {role.starters.map((starter) => (
-            <button
-              key={starter.id}
-              type="button"
-              className="text-left"
-              onClick={() => void startStarter(starter.prompt, starter.id)}
+        {!onboarded ? (
+          <div className="flex flex-col gap-3 rounded-2xl border bg-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm leading-6">
+              Li o texto do meu cargo e entendi o que o assistente prioriza.
+            </p>
+            <Button
+              className="rounded-full"
+              disabled={onboard.isPending}
+              onClick={() => onboard.mutate()}
             >
-              <Card size="sm">
-                <CardHeader>
-                  <CardTitle>{starter.title}</CardTitle>
-                </CardHeader>
-                <CardContent className="text-muted-foreground">{starter.prompt}</CardContent>
-              </Card>
-            </button>
-          ))}
-        </div>
-      </div>
+              Entendi meu cargo
+            </Button>
+          </div>
+        ) : null}
 
-      <div>
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">
-          Conversas recentes
-        </h2>
-        <ul className="space-y-1 text-sm">
-          {(recents.data?.conversations ?? []).slice(0, 3).map((conversation) => (
-            <li key={conversation.id}>
-              <Link
-                to="/app/chat/$conversationId"
-                params={{ conversationId: conversation.id }}
-                className="hover:underline"
+        <div>
+          <h2 className="mb-3 text-sm font-medium text-muted-foreground">Perguntas-guia</h2>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {role.starters.map((starter) => (
+              <button
+                key={starter.id}
+                type="button"
+                className="rounded-2xl border border-border/80 px-4 py-3 text-left transition-colors hover:bg-muted/60"
+                onClick={() => void startStarter(starter.prompt, starter.id)}
               >
-                {conversation.title}
-              </Link>
-            </li>
-          ))}
-        </ul>
+                <span className="block text-sm font-medium">{starter.title}</span>
+                <span className="mt-1 line-clamp-2 block text-[13px] leading-5 text-muted-foreground">
+                  {starter.prompt}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <h2 className="mb-3 text-sm font-medium text-muted-foreground">Conversas recentes</h2>
+          <ul className="divide-y rounded-2xl border">
+            {(recents.data?.conversations ?? []).slice(0, 3).map((conversation) => (
+              <li key={conversation.id}>
+                <Link
+                  to="/app/chat/$conversationId"
+                  params={{ conversationId: conversation.id }}
+                  className="block px-4 py-3 text-sm hover:bg-muted/50"
+                >
+                  {conversation.title || "Nova conversa"}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     </section>
   );

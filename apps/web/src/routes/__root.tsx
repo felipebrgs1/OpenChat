@@ -1,4 +1,5 @@
 import { Toaster } from "@nexo/ui/components/sonner";
+import { TooltipProvider } from "@nexo/ui/components/tooltip";
 import { HeadContent, Outlet, createRootRouteWithContext } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 
@@ -27,10 +28,12 @@ function RootComponent() {
         disableTransitionOnChange
         storageKey="nexo-theme"
       >
-        <AuthProvider>
-          <Outlet />
-          <Toaster richColors />
-        </AuthProvider>
+        <TooltipProvider>
+          <AuthProvider>
+            <Outlet />
+            <Toaster richColors />
+          </AuthProvider>
+        </TooltipProvider>
       </ThemeProvider>
       <TanStackRouterDevtools position="bottom-left" />
     </>

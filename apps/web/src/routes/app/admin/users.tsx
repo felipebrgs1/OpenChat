@@ -2,6 +2,7 @@ import type { AdminUser, RoleSummary } from "@nexo/contracts";
 import { Button } from "@nexo/ui/components/button";
 import { Input } from "@nexo/ui/components/input";
 import { Label } from "@nexo/ui/components/label";
+import { Select } from "@nexo/ui/components/select";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -56,14 +57,14 @@ function AdminUsersPage() {
   });
 
   return (
-    <section className="space-y-8 px-8 py-10">
+    <section className="mx-auto w-full max-w-6xl space-y-8 px-6 py-8 sm:px-8">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Usuários</h1>
-        <p className="text-sm text-muted-foreground">Convite, cargo, admin e status.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Convite, cargo, admin e status.</p>
       </div>
 
       <form
-        className="flex flex-wrap items-end gap-3"
+        className="flex flex-wrap items-end gap-3 rounded-2xl border p-4"
         onSubmit={(event) => {
           event.preventDefault();
           invite.mutate();
@@ -74,6 +75,7 @@ function AdminUsersPage() {
           <Input
             id="invite-email"
             type="email"
+            className="h-9 min-w-64 rounded-xl text-sm md:text-sm"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             required
@@ -81,9 +83,9 @@ function AdminUsersPage() {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="invite-role">Cargo</Label>
-          <select
+          <Select
             id="invite-role"
-            className="h-8 border border-input bg-transparent px-2 text-xs"
+            className="min-w-48"
             value={roleId}
             onChange={(event) => setRoleId(event.target.value)}
           >
@@ -93,32 +95,32 @@ function AdminUsersPage() {
                 {role.name}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
-        <Button type="submit" disabled={invite.isPending}>
+        <Button type="submit" className="rounded-xl" disabled={invite.isPending}>
           Convidar
         </Button>
       </form>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto rounded-2xl border">
         <table className="w-full text-left text-sm">
-          <thead className="border-b text-xs uppercase text-muted-foreground">
+          <thead className="border-b bg-muted/40 text-xs uppercase text-muted-foreground">
             <tr>
-              <th className="py-2 pr-4 font-medium">Nome</th>
-              <th className="py-2 pr-4 font-medium">Email</th>
-              <th className="py-2 pr-4 font-medium">Cargo</th>
-              <th className="py-2 pr-4 font-medium">Status</th>
-              <th className="py-2 font-medium">Admin</th>
+              <th className="px-4 py-3 font-medium">Nome</th>
+              <th className="px-4 py-3 font-medium">Email</th>
+              <th className="px-4 py-3 font-medium">Cargo</th>
+              <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 font-medium">Admin</th>
             </tr>
           </thead>
           <tbody>
             {users.data?.users.map((row) => (
-              <tr key={row.id} className="border-b">
-                <td className="py-2 pr-4">{row.name}</td>
-                <td className="py-2 pr-4">{row.email}</td>
-                <td className="py-2 pr-4">
-                  <select
-                    className="h-8 border border-input bg-transparent px-2 text-xs"
+              <tr key={row.id} className="border-b last:border-0">
+                <td className="px-4 py-3">{row.name}</td>
+                <td className="px-4 py-3">{row.email}</td>
+                <td className="px-4 py-3">
+                  <Select
+                    className="min-w-40"
                     value={row.roleId ?? ""}
                     onChange={(event) =>
                       patchUser.mutate({
@@ -133,11 +135,11 @@ function AdminUsersPage() {
                         {role.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </td>
-                <td className="py-2 pr-4">
-                  <select
-                    className="h-8 border border-input bg-transparent px-2 text-xs"
+                <td className="px-4 py-3">
+                  <Select
+                    className="min-w-36"
                     value={row.status === "invited" ? "invited" : row.status}
                     disabled={row.status === "invited"}
                     onChange={(event) =>
@@ -150,11 +152,12 @@ function AdminUsersPage() {
                     {row.status === "invited" ? <option value="invited">convidado</option> : null}
                     <option value="active">ativo</option>
                     <option value="disabled">desativado</option>
-                  </select>
+                  </Select>
                 </td>
-                <td className="py-2">
+                <td className="px-4 py-3">
                   <input
                     type="checkbox"
+                    className="size-4 accent-foreground"
                     checked={row.isAdmin}
                     onChange={(event) =>
                       patchUser.mutate({

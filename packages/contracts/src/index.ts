@@ -177,12 +177,35 @@ export const patchAdminUserBodySchema = z.object({
 });
 export type PatchAdminUserBody = z.infer<typeof patchAdminUserBodySchema>;
 
+export const modelOptionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+});
+export type ModelOption = z.infer<typeof modelOptionSchema>;
+
 export const modelsResponseSchema = z.object({
   defaultModel: z.string(),
   fallbackModel: z.string(),
   allowedModels: z.array(z.string()),
+  models: z.array(modelOptionSchema),
 });
 export type ModelsResponse = z.infer<typeof modelsResponseSchema>;
+
+export const adminSettingsSchema = z.object({
+  name: z.string(),
+  defaultModel: z.string(),
+  fallbackModel: z.string(),
+  allowedModels: z.array(z.string()),
+  catalog: z.array(modelOptionSchema),
+});
+export type AdminSettings = z.infer<typeof adminSettingsSchema>;
+
+export const patchAdminSettingsBodySchema = z.object({
+  defaultModel: z.string().min(1).optional(),
+  fallbackModel: z.string().min(1).optional(),
+  allowedModels: z.array(z.string().min(1)).min(1).optional(),
+});
+export type PatchAdminSettingsBody = z.infer<typeof patchAdminSettingsBodySchema>;
 
 export const conversationSchema = z.object({
   id: z.string().uuid(),

@@ -9,8 +9,8 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 
 import { notFound } from "../lib/errors";
-import { streamOpenRouter } from "../lib/openrouter";
-import { assertAllowedModel, loadOrgSettings } from "../lib/org";
+import { publicLlmError, streamNexoTurn } from "../lib/pi-harness";
+import { assertSelectableModel, effectiveDefaultModel, loadOrgSettings } from "../lib/org";
 import { parseBody } from "../lib/parse";
 import { assemblePrompt } from "../lib/prompt";
 import { assertMessageRateLimit } from "../lib/rate-limit";
@@ -75,8 +75,8 @@ conversationRoutes.post("/", async (c) => {
   const user = c.get("user");
   const body = await parseBody(createConversationBodySchema, await c.req.json().catch(() => ({})));
   const settings = await loadOrgSettings();
-  const model = body.model ?? settings.defaultModel;
-  assertAllowedModel(settings.allowedModels, model);
+  const model = body.model ?? effectiveDefaultModel(settings);
+  await assertSelectableModel(settings, model);
 
   const [row] = await db
     .insert(conversations)
@@ -132,8 +132,8 @@ conversationRoutes.post("/:id/messages", async (c) => {
   const convo = await loadOwned(user.id, c.req.param("id"));
   const body = await parseBody(sendMessageBodySchema, await c.req.json());
   const settings = await loadOrgSettings();
-  const model = body.model ?? convo.model ?? settings.defaultModel;
-  assertAllowedModel(settings.allowedModels, model);
+  const model = body.model ?? convo.model ?? effectiveDefaultModel(settings);
+  await assertSelectableModel(settings, model);
   assertMessageRateLimit(user.id);
 
   let content = body.content;
@@ -209,8 +209,7 @@ conversationRoutes.post("/:id/messages", async (c) => {
       }),
     });
 
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) {
+    if (!process.env.OPENROUTER_API_KEY?.trim()) {
       const error = "OPENROUTER_API_KEY ausente.";
       await db.update(messages).set({ error }).where(eq(messages.id, assistantMessage.id));
       await stream.writeSSE({
@@ -222,15 +221,17 @@ conversationRoutes.post("/:id/messages", async (c) => {
 
     let full = "";
     try {
-      const usage = await streamOpenRouter({
-        baseUrl: settings.openrouterBaseUrl,
-        apiKey,
-        referer: process.env.OPENROUTER_HTTP_REFERER,
-        title: process.env.OPENROUTER_APP_TITLE ?? "Nexo",
+      const usage = await streamNexoTurn({
         userId: user.id,
         model,
         fallbackModel: settings.fallbackModel,
-        messages: [{ role: "system", content: assembled.system }, ...assembled.messages],
+        baseUrl: settings.openrouterBaseUrl,
+        systemPrompt: assembled.system,
+        history: assembled.messages.slice(0, -1).map((row) => ({
+          role: row.role,
+          content: row.content,
+        })),
+        content,
         signal: c.req.raw.signal,
         onDelta: async (text) => {
           full += text;
@@ -273,7 +274,7 @@ conversationRoutes.post("/:id/messages", async (c) => {
         }),
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha no OpenRouter.";
+      const message = publicLlmError(error);
       await db
         .update(messages)
         .set({ content: full, error: message, model })

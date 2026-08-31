@@ -1,9 +1,15 @@
+import type { MeResponse } from "@nexo/contracts";
 import { Button } from "@nexo/ui/components/button";
-import { createFileRoute, Link, Outlet, redirect, useNavigate } from "@tanstack/react-router";
+import { cn } from "@nexo/ui/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
+import { MessageSquarePlus } from "lucide-react";
 
 import { ConversationList } from "@/components/chat/conversation-list";
-import { ModeToggle } from "@/components/mode-toggle";
-import { ModelProvider, useModel } from "@/components/model-provider";
+import { ModelSelect } from "@/components/chat/model-select";
+import { ModelProvider } from "@/components/model-provider";
+import { UserMenu } from "@/components/user-menu";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { authDisabled } from "@/lib/flags";
 import { getSession } from "@/lib/session";
@@ -26,98 +32,65 @@ function AppShell() {
 }
 
 function AppShellInner() {
-  const { user, logout, ready } = useAuth();
-  const navigate = useNavigate();
-  const { model, setModel, allowedModels } = useModel();
+  const { user, ready } = useAuth();
+  const me = useQuery({
+    queryKey: ["me"],
+    queryFn: () => api<MeResponse>("/api/me"),
+    enabled: ready,
+  });
+  const roleName = me.data?.role?.name;
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const onChat = pathname === "/app/chat" || pathname.startsWith("/app/chat/");
 
   if (!ready) {
-    return <div className="p-6 text-sm text-muted-foreground">Carregando…</div>;
+    return (
+      <div className="flex h-svh items-center justify-center text-sm text-muted-foreground">
+        Carregando…
+      </div>
+    );
   }
 
   return (
-    <div className="grid h-svh grid-cols-[260px_1fr]">
-      <aside className="flex min-h-0 flex-col border-r bg-card">
-        <div className="px-4 py-4">
-          <Link to="/app" className="text-lg font-semibold tracking-tight">
-            Nexo
-          </Link>
-          <p className="mt-1 truncate text-xs text-muted-foreground">{user?.name ?? user?.email}</p>
+    <div className="grid h-svh grid-cols-[272px_1fr] bg-background">
+      <aside className="flex min-h-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+        <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
+          <span className="inline-flex size-8 items-center justify-center rounded-xl bg-foreground text-[13px] font-semibold text-background">
+            N
+          </span>
+          <div className="min-w-0">
+            <Link to="/app" className="block text-[15px] font-semibold tracking-tight">
+              Nexo
+            </Link>
+            <p className="truncate text-[11px] text-sidebar-foreground/55">
+              {roleName ?? "Assistente interno"}
+            </p>
+          </div>
         </div>
-        <nav className="flex flex-col gap-1 px-2 text-sm">
-          <Link
-            to="/app"
-            className="rounded-none px-2 py-1.5 hover:bg-muted [&.active]:bg-muted [&.active]:font-medium"
-            activeOptions={{ exact: true }}
-          >
-            Início
+        <div className="px-3 pb-3">
+          <Link to="/app/chat" className="block">
+            <Button
+              variant="outline"
+              className="h-9 w-full justify-start gap-2 rounded-xl bg-background"
+            >
+              <MessageSquarePlus className="size-4" />
+              Nova conversa
+            </Button>
           </Link>
-          <Link
-            to="/app/chat"
-            className="rounded-none px-2 py-1.5 hover:bg-muted [&.active]:bg-muted [&.active]:font-medium"
-          >
-            Chat
-          </Link>
-          <Link
-            to="/app/settings"
-            className="rounded-none px-2 py-1.5 hover:bg-muted [&.active]:bg-muted [&.active]:font-medium"
-          >
-            Perfil
-          </Link>
-          {user?.isAdmin ? (
-            <>
-              <p className="mt-4 px-2 text-xs uppercase tracking-wide text-muted-foreground">
-                Admin
-              </p>
-              <Link
-                to="/app/admin/users"
-                className="rounded-none px-2 py-1.5 hover:bg-muted [&.active]:bg-muted [&.active]:font-medium"
-              >
-                Usuários
-              </Link>
-              <Link
-                to="/app/admin/roles"
-                className="rounded-none px-2 py-1.5 hover:bg-muted [&.active]:bg-muted [&.active]:font-medium"
-              >
-                Cargos
-              </Link>
-            </>
-          ) : null}
-        </nav>
-        <div className="mt-4 min-h-0 flex-1">
+        </div>
+        <div className="min-h-0 flex-1">
           <ConversationList />
         </div>
-        <div className="flex items-center justify-between gap-2 border-t px-3 py-3">
-          <ModeToggle />
-          {authDisabled() ? null : (
-            <Button
-              variant="ghost"
-              onClick={async () => {
-                await logout();
-                await navigate({ to: "/login" });
-              }}
-            >
-              Sair
-            </Button>
-          )}
+        <div className="border-t border-sidebar-border p-2">
+          <UserMenu user={user} roleName={roleName} />
         </div>
       </aside>
-      <div className="grid min-h-0 grid-rows-[auto_1fr]">
-        <header className="flex items-center justify-between gap-3 border-b px-4 py-2 text-sm">
-          <select
-            className="h-8 max-w-xs border border-input bg-transparent px-2 text-xs"
-            value={model}
-            onChange={(event) => setModel(event.target.value)}
-          >
-            {allowedModels.length === 0 ? <option value="">modelo</option> : null}
-            {allowedModels.map((id) => (
-              <option key={id} value={id}>
-                {id}
-              </option>
-            ))}
-          </select>
-          <span className="truncate text-xs text-muted-foreground">{user?.email}</span>
-        </header>
-        <main className="min-h-0 overflow-hidden">
+      <div className="flex min-h-0 flex-col">
+        {onChat ? (
+          <header className="flex h-12 shrink-0 items-center gap-3 px-3">
+            <ModelSelect />
+          </header>
+        ) : null}
+        <main className={cn("min-h-0 flex-1", onChat ? "overflow-hidden" : "overflow-y-auto")}>
           <Outlet />
         </main>
       </div>

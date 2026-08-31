@@ -14,6 +14,9 @@ export const Route = createFileRoute("/app/admin/roles/")({
   component: AdminRolesPage,
 });
 
+const fieldClass = "h-9 rounded-xl text-sm md:text-sm";
+const areaClass = "min-h-28 rounded-xl text-sm md:text-sm leading-6";
+
 function AdminRolesPage() {
   const queryClient = useQueryClient();
   const roles = useQuery({
@@ -57,20 +60,20 @@ function AdminRolesPage() {
   });
 
   return (
-    <section className="space-y-8 px-8 py-10">
+    <section className="mx-auto w-full max-w-5xl space-y-8 px-6 py-8 sm:px-8">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Cargos</h1>
-        <p className="text-sm text-muted-foreground">Cargo de sistema não pode ser apagado.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Cargo de sistema não pode ser apagado.</p>
       </div>
 
-      <ul className="divide-y border">
+      <ul className="divide-y overflow-hidden rounded-2xl border">
         {roles.data?.roles.map((role) => (
           <li key={role.id} className="flex items-center justify-between gap-4 px-4 py-3 text-sm">
-            <div>
+            <div className="min-w-0">
               <Link
                 to="/app/admin/roles/$slug"
                 params={{ slug: role.slug }}
-                className="font-medium"
+                className="font-medium hover:underline"
               >
                 {role.name}
               </Link>
@@ -80,7 +83,7 @@ function AdminRolesPage() {
               </p>
             </div>
             {role.isSystem ? null : (
-              <Button variant="ghost" onClick={() => remove.mutate(role.id)}>
+              <Button variant="ghost" className="rounded-xl" onClick={() => remove.mutate(role.id)}>
                 Apagar
               </Button>
             )}
@@ -89,35 +92,40 @@ function AdminRolesPage() {
       </ul>
 
       <form
-        className="grid max-w-xl gap-3"
+        className="grid max-w-2xl gap-4 rounded-2xl border p-5"
         onSubmit={(event) => {
           event.preventDefault();
           create.mutate();
         }}
       >
-        <h2 className="text-sm font-medium">Novo cargo</h2>
-        <div className="space-y-1.5">
-          <Label htmlFor="slug">Slug</Label>
-          <Input
-            id="slug"
-            value={slug}
-            onChange={(event) => setSlug(event.target.value)}
-            required
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="name">Nome</Label>
-          <Input
-            id="name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            required
-          />
+        <h2 className="text-base font-medium">Novo cargo</h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="slug">Slug</Label>
+            <Input
+              id="slug"
+              className={fieldClass}
+              value={slug}
+              onChange={(event) => setSlug(event.target.value)}
+              required
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="name">Nome</Label>
+            <Input
+              id="name"
+              className={fieldClass}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              required
+            />
+          </div>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="description">Descrição</Label>
           <Input
             id="description"
+            className={fieldClass}
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             required
@@ -127,6 +135,7 @@ function AdminRolesPage() {
           <Label htmlFor="systemPrompt">System prompt</Label>
           <Textarea
             id="systemPrompt"
+            className={areaClass}
             value={systemPrompt}
             onChange={(event) => setSystemPrompt(event.target.value)}
             required
@@ -136,12 +145,13 @@ function AdminRolesPage() {
           <Label htmlFor="welcomeMd">Welcome markdown</Label>
           <Textarea
             id="welcomeMd"
+            className={areaClass}
             value={welcomeMd}
             onChange={(event) => setWelcomeMd(event.target.value)}
             required
           />
         </div>
-        <Button type="submit" disabled={create.isPending}>
+        <Button type="submit" className="w-fit rounded-xl" disabled={create.isPending}>
           Criar
         </Button>
       </form>

@@ -94,8 +94,8 @@ Cada cargo tem:
 | ORM         | Drizzle                       | `drizzle-orm/node-postgres`                |
 | DB          | PostgreSQL 16+                | imagem de dev: 18                          |
 | auth        | JWT HS256 (Bearer)            | email/senha + convite; sem Better Auth     |
-| LLM         | OpenRouter                    | OpenAI-compatible                          |
-| streaming   | SSE                           | `text/event-stream`                        |
+| LLM         | OpenRouter via pi SDK         | harness headless no server; UI não vê pi   |
+| streaming   | SSE                           | `text/event-stream` (contrato do web)      |
 | files       | disco local v1                | path configurável; S3 depois               |
 | testes      | bun:test                      | unit + request na API                      |
 | lint        | Oxlint + Oxfmt                |                                            |
@@ -500,6 +500,8 @@ Onboarding: se `onboarded_at` null, a home é obrigatória antes do chat livre. 
 
 ## 12. OpenRouter
 
+A partir do lote 3 o server não chama OpenRouter direto. `apps/server` usa o SDK do `pi` (`createAgentSession`, `noTools: "all"`) e o `pi` fala com OpenRouter. O web continua vendo só SSE. A chave nunca sai do processo do server.
+
 Env da API:
 
 ```
@@ -521,10 +523,8 @@ Se o provider não mandar custo, estimar pela tabela local `model_price` (lote g
 
 Default seed de modelos:
 
-- `google/gemini-2.5-flash` (default)
-- `anthropic/claude-sonnet-4.5` (análise)
-- `openai/gpt-4.1-mini` (geral)
-- um raciocínio barato disponível no catálogo no momento do seed
+- `z-ai/glm-5.3-flash` (default se a org não escolher outro)
+- allowlist configurável pelo admin em `/app/admin/models`
 
 Allowlist na org. Dropdown não lista 400 modelos.
 
@@ -541,7 +541,7 @@ Allowlist na org. Dropdown não lista 400 modelos.
 - Knowledge `by_role`: API filtra por `user.role_id`
 - Não logar content completo em stdout. Logar ids, modelo, tokens, latency
 - `.env` único na raiz, nunca commitado, nunca copiado para `apps/*`
-- Uploads v1 só markdown/txt/pdf no lote RAG; lote 3 só markdown colado no admin
+- Uploads v1 só markdown/txt/pdf no lote RAG; lote 4 só markdown colado no admin
 
 ---
 
@@ -612,7 +612,30 @@ Aceite:
 - modelo fora da allowlist → 400
 - queda do OpenRouter → event error, mensagem marcada com error, UI mostra retry
 
-### Lote 3 — Conhecimento por cargo (sem vetor)
+### Lote 3 — Harness pi headless
+
+Objetivo: o chat usa `pi` como engine server-side, sem o usuário perceber. UI ChatGPT intacta.
+
+Entregáveis:
+
+- `apps/server` depende de `@earendil-works/pi-coding-agent` + `@earendil-works/pi-ai`
+- `createAgentSession` in-process (não RPC, não TUI)
+- `POST /api/conversations/:id/messages` mantém SSE `meta/delta/done/error`
+- `OPENROUTER_API_KEY` só no env do server; `ModelRuntime.setRuntimeApiKey`
+- `noTools: "all"` — sem bash/read/edit/write para o usuário
+- troca de modelo continua via allowlist da org + `body.model`
+- prompt assembly atual (`assemblePrompt`) entra como system prompt do `pi`
+
+Fora: knowledge, RAG, tools reais, TUI, `/compact` na UI.
+
+Aceite:
+
+- UI (`thread.tsx` / `sse.ts` / `model-provider.tsx`) não muda
+- inspeção de rede não mostra apikey, `pi`, `toolCallId` ou `sessionFile`
+- modelo fora da allowlist → 400
+- sem `OPENROUTER_API_KEY` → `event: error LLM_UPSTREAM`
+
+### Lote 4 — Conhecimento por cargo (sem vetor)
 
 Objetivo: o cargo passa a ter “onde perguntar” e base escrita.
 
@@ -641,7 +664,7 @@ Textos seed mínimos (podem ser stub):
 - Stack e como subir o ambiente (produto)
 - Organograma e quem perguntar o quê (novato, todos)
 
-### Lote 4 — Admin de verdade + uso
+### Lote 5 — Admin de verdade + uso
 
 Objetivo: operar o sistema.
 
@@ -660,7 +683,7 @@ Aceite:
 - user disabled não autentica
 - mudança de cargo altera starters e knowledge na próxima request (não nas conversas antigas; snapshot já gravado)
 
-### Lote 5 — RAG
+### Lote 6 — RAG
 
 Objetivo: bases maiores sem estourar contexto.
 
@@ -678,7 +701,7 @@ Aceite:
 - collection com 30 páginas ainda responde com citação
 - cargo sem acesso à collection não recupera o chunk
 
-### Lote 6 — Ferramentas / MCP
+### Lote 7 — Ferramentas / MCP
 
 Objetivo: o assistente consulta sistema vivo, read-only.
 
@@ -694,7 +717,7 @@ Aceite:
 - modelo chama tool e a UI mostra “consultando base”
 - nenhum tool de escrita existe
 
-### Lote 7 — Governança fina
+### Lote 8 — Governança fina
 
 - budget por user e por cargo
 - rate limit persistido
@@ -819,8 +842,9 @@ Testes mínimos por lote:
 
 - Lote 1: invite + login + me.role (`bun --cwd apps/server test`)
 - Lote 2: isolation de conversation + reject model
-- Lote 3: knowledge isolada por cargo
-- Lote 4: disabled user 401
+- Lote 3: harness mockado + SSE sem apikey sem vazar pi
+- Lote 4: knowledge isolada por cargo
+- Lote 5: disabled user 401
 
 ---
 
@@ -839,5 +863,6 @@ Decisões fechadas:
 - 2026-08-31: `.env` único na raiz; sem `packages/env`.
 - 2026-08-31: API em `apps/server` (não `apps/api`).
 - 2026-08-31: Postgres 18 no compose de dev.
+- 2026-08-31: chat engine = pi SDK in-process (não RPC/TUI); OpenRouter continua o provider; UI não expõe harness.
 
 Quando uma decisão fechar, gravar aqui em uma linha e a data.

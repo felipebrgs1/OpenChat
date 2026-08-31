@@ -5,6 +5,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { ZodError } from "zod";
 
 import { ApiError } from "./lib/errors";
+import { adminSettingsRoutes } from "./routes/admin-settings";
 import { adminUserRoutes } from "./routes/admin-users";
 import { authRoutes } from "./routes/auth";
 import { conversationRoutes } from "./routes/conversations";
@@ -54,6 +55,7 @@ app.route("/api/roles", roleRoutes);
 app.route("/api/models", modelRoutes);
 app.route("/api/conversations", conversationRoutes);
 app.route("/api/admin/users", adminUserRoutes);
+app.route("/api/admin/settings", adminSettingsRoutes);
 
 app.notFound((c) => {
   return c.json({ error: { code: "NOT_FOUND", message: "Não encontrado." } }, 404);

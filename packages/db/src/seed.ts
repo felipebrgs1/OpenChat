@@ -43,13 +43,9 @@ export async function seed(db = defaultDb) {
   const settingsValues = {
     name: "Nexo",
     globalSystemPrompt: GLOBAL_SYSTEM_PROMPT,
-    defaultModel: "google/gemini-2.5-flash",
-    fallbackModel: "openai/gpt-4.1-mini",
-    allowedModels: [
-      "google/gemini-2.5-flash",
-      "anthropic/claude-sonnet-4.5",
-      "openai/gpt-4.1-mini",
-    ],
+    defaultModel: "z-ai/glm-5.3-flash",
+    fallbackModel: "z-ai/glm-5.3-flash",
+    allowedModels: ["z-ai/glm-5.3-flash"],
     updatedAt: new Date(),
   };
 

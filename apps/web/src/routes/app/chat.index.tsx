@@ -1,12 +1,11 @@
 import type { Conversation, MeResponse, Starter } from "@nexo/contracts";
-import { Card, CardContent, CardHeader, CardTitle } from "@nexo/ui/components/card";
-import { Textarea } from "@nexo/ui/components/textarea";
-import { Button } from "@nexo/ui/components/button";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
+import { ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { ChatComposer } from "@/components/chat/composer";
 import { useModel } from "@/components/model-provider";
 import { api, ApiRequestError } from "@/lib/api";
 
@@ -53,48 +52,47 @@ function ChatIndexPage() {
   };
 
   const starters = me.data?.role?.starters ?? [];
+  const firstName = me.data?.user.name?.split(" ")[0];
 
   return (
-    <section className="mx-auto flex h-full max-w-3xl flex-col justify-between px-6 py-10">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Nova conversa</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Escolha uma pergunta-guia ou escreva a sua.
-        </p>
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          {starters.map((starter: Starter) => (
-            <button
-              key={starter.id}
-              type="button"
-              className="text-left"
-              onClick={() => void start(starter.prompt, starter.id)}
-            >
-              <Card size="sm">
-                <CardHeader>
-                  <CardTitle>{starter.title}</CardTitle>
-                </CardHeader>
-                <CardContent className="text-muted-foreground">{starter.prompt}</CardContent>
-              </Card>
-            </button>
-          ))}
+    <section className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center px-6 py-10">
+          <h1 className="text-center text-3xl font-semibold tracking-tight">
+            {firstName ? `Olá, ${firstName}` : "Como posso ajudar?"}
+          </h1>
+          <p className="mt-2 text-center text-sm text-muted-foreground">
+            {me.data?.role?.name
+              ? `Contexto do cargo ${me.data.role.name}. Escolha um atalho ou escreva.`
+              : "Escolha um atalho ou escreva sua pergunta."}
+          </p>
+          <div className="mt-8 grid gap-2 sm:grid-cols-2">
+            {starters.slice(0, 6).map((starter: Starter) => (
+              <button
+                key={starter.id}
+                type="button"
+                disabled={pending}
+                onClick={() => void start(starter.prompt, starter.id)}
+                className="group rounded-2xl border border-border/80 bg-background px-4 py-3 text-left transition-colors hover:bg-muted/60 disabled:opacity-60"
+              >
+                <span className="flex items-start justify-between gap-3">
+                  <span className="text-sm font-medium">{starter.title}</span>
+                  <ArrowUpRight className="mt-0.5 size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                </span>
+                <span className="mt-1 line-clamp-2 text-[13px] leading-5 text-muted-foreground">
+                  {starter.prompt}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-      <form
-        className="flex gap-2 pt-6"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void start(draft);
-        }}
-      >
-        <Textarea
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="Pergunte ao Nexo"
-        />
-        <Button type="submit" disabled={pending}>
-          Enviar
-        </Button>
-      </form>
+      <ChatComposer
+        value={draft}
+        onChange={setDraft}
+        onSubmit={() => void start(draft)}
+        disabled={pending}
+      />
     </section>
   );
 }

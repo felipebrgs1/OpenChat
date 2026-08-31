@@ -78,4 +78,38 @@ describe("lote 2 — chat", () => {
     expect(peek.status).toBe(404);
     expect((peek.data.error as { code: string }).code).toBe("NOT_FOUND");
   });
+
+  it("sem OPENROUTER_API_KEY devolve error SSE sem vazar harness", async () => {
+    const token = await login(adminEmail, adminPassword);
+    const created = await request("/api/conversations", {
+      method: "POST",
+      token,
+      body: {},
+    });
+    expect(created.status).toBe(200);
+    const previous = process.env.OPENROUTER_API_KEY;
+    process.env.OPENROUTER_API_KEY = "";
+    try {
+      const headers = new Headers({ "Content-Type": "application/json" });
+      headers.set("Authorization", `Bearer ${token}`);
+      const response = await app.request(
+        `/api/conversations/${created.data.id as string}/messages`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ content: "oi" }),
+        },
+      );
+      expect(response.headers.get("content-type") ?? "").toContain("text/event-stream");
+      const body = await response.text();
+      expect(body).toContain("event: error");
+      expect(body).toContain("LLM_UPSTREAM");
+      expect(body).toContain("OPENROUTER_API_KEY ausente");
+      expect(body).not.toContain("pi-coding-agent");
+      expect(body).not.toContain("sessionFile");
+      expect(body).not.toContain("toolCallId");
+    } finally {
+      process.env.OPENROUTER_API_KEY = previous;
+    }
+  });
 });
