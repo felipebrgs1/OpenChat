@@ -94,6 +94,12 @@ roleRoutes.patch("/:id", requireAdmin, async (c) => {
       description: body.description ?? current.description,
       systemPrompt: body.systemPrompt ?? current.systemPrompt,
       welcomeMd: body.welcomeMd ?? current.welcomeMd,
+      monthlyBudgetUsd:
+        body.monthlyBudgetUsd === undefined
+          ? current.monthlyBudgetUsd
+          : body.monthlyBudgetUsd === null
+            ? null
+            : body.monthlyBudgetUsd.toFixed(4),
       updatedAt: new Date(),
     })
     .where(eq(roles.id, id))
@@ -108,6 +114,7 @@ roleRoutes.patch("/:id", requireAdmin, async (c) => {
     action: "role.update",
     entityType: "role",
     entityId: role.id,
+    meta: body,
   });
 
   const starters = await db

@@ -55,6 +55,7 @@ export const users = pgTable(
     isAdmin: boolean("is_admin").notNull().default(false),
     status: userStatusEnum("status").notNull().default("invited"),
     creditBalance: numeric("credit_balance", { precision: 12, scale: 4 }).notNull().default("1000.0000"),
+    monthlyBudgetUsd: numeric("monthly_budget_usd", { precision: 12, scale: 4 }),
     personalPrompt: text("personal_prompt"),
     memorySummary: text("memory_summary"),
     autoLearn: boolean("auto_learn").notNull().default(true),

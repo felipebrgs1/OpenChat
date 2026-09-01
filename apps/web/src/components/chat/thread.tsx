@@ -291,7 +291,7 @@ export function ChatThread({
                           {modelLabel(message.model)}
                         </span>
                       ) : null}
-                      {message.credits ? (
+                      {message.credits && me.data?.user.isAdmin ? (
                         <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
                           {Number(message.credits).toFixed(2)} créditos
                         </span>

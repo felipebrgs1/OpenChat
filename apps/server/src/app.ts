@@ -6,6 +6,7 @@ import { ZodError } from "zod";
 
 import { ApiError } from "./lib/errors";
 import { adminSettingsRoutes } from "./routes/admin-settings";
+import { adminUsageRoutes } from "./routes/admin-usage";
 import { adminUserRoutes } from "./routes/admin-users";
 import { creditRoutes } from "./routes/credits";
 import { authRoutes } from "./routes/auth";
@@ -58,6 +59,7 @@ app.route("/api/models", modelRoutes);
 app.route("/api/conversations", conversationRoutes);
 app.route("/api/knowledge", knowledgeRoutes);
 app.route("/api/admin/users", adminUserRoutes);
+app.route("/api/admin/usage", adminUsageRoutes);
 app.route("/api/admin/settings", adminSettingsRoutes);
 app.route("/api/credits", creditRoutes);
 

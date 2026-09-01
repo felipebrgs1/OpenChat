@@ -864,5 +864,6 @@ Decisões fechadas:
 - 2026-08-31: API em `apps/server` (não `apps/api`).
 - 2026-08-31: Postgres 18 no compose de dev.
 - 2026-08-31: chat engine = pi SDK in-process (não RPC/TUI); OpenRouter continua o provider; UI não expõe harness.
+- 2026-09-01: controle fino de gastos antecipado do lote 8: orçamento mensal por usuário, cargo e org, enforce no envio da mensagem (`assertBudgets`), além do saldo em créditos (1000 cr = US$1).
 
 Quando uma decisão fechar, gravar aqui em uma linha e a data.

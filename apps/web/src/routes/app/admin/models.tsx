@@ -2,7 +2,6 @@ import type { AdminSettings } from "@nexo/contracts";
 import { Button } from "@nexo/ui/components/button";
 import { Input } from "@nexo/ui/components/input";
 import { Label } from "@nexo/ui/components/label";
-import { Select } from "@nexo/ui/components/select";
 import { cn } from "@nexo/ui/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -93,9 +92,9 @@ function AdminModelsForm({ data }: { data: AdminSettings }) {
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-1.5">
             <Label htmlFor="default-model">Padrão</Label>
-            <Select
+            <select
               id="default-model"
-              className="min-w-56"
+              className="h-9 min-w-56 rounded-xl border border-input bg-background px-3 text-sm md:text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               value={defaultModel}
               onChange={(event) => setDefaultModel(event.target.value)}
             >
@@ -107,7 +106,7 @@ function AdminModelsForm({ data }: { data: AdminSettings }) {
                   </option>
                 );
               })}
-            </Select>
+            </select>
           </div>
           <Button
             className="rounded-xl"

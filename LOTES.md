@@ -2,7 +2,7 @@
 
 Fonte: `NEXO.md`. Este arquivo é o checklist de execução.
 
-Status: **lote 4 feito**. Knowledge por cargo sem vetor; injeção no system prompt com cap de 4k tokens.
+Status: **lote 5 feito**. Uso agregado, governança e controle fino de gastos (saldo + orçamento mensal user/cargo/org).
 
 ---
 
@@ -107,14 +107,37 @@ Aceite:
 
 Fora: embedding, pgvector, upload PDF, busca semântica (lote 6).
 
-## Lote 5 — Admin e uso
+## Lote 5 — Admin de verdade + uso
 
-Status: bloqueado por 4
+Status: feito
 
-- [ ] usage por user/cargo/modelo
-- [ ] disable user, troca de cargo
-- [ ] settings da org
-- [ ] audit_log
+- [x] `GET /api/admin/usage?days=N` — agregação por usuário / cargo / modelo / dia (`admin-usage.ts`, SQL `group by` + fuso `America/Sao_Paulo` por dia)
+- [x] disable user e troca de cargo (já existia no PATCH admin; agora com teste: disabled → 401)
+- [x] settings da org: prompt global + orçamento mensal da org + modelos (`/app/admin/settings` nova página)
+- [x] audit_log nas mutações admin (role.update com meta, settings.update com meta)
+- [x] badge de custo na conversa visível só para admin (`thread.tsx`)
+
+Controle fino de gastos (pedido do dono — antecipado do lote 8):
+
+- [x] `user.monthly_budget_usd` (coluna nova; push aplicado)
+- [x] `role.monthly_budget_usd` (coluna já existia, agora usada)
+- [x] `organization_settings.monthly_budget_usd`
+- [x] `lib/budget.ts` — `assertBudgets`: saldo de créditos → orçamento do usuário → do cargo → da org; soma `usage_event.cost_usd` do mês corrente (America/Sao_Paulo); lança `BUDGET_EXCEEDED` antes de chamar o modelo
+- [x] UI: coluna "Orçamento mês" editável em Usuários, campo em edição de cargo, campo em Configurações
+
+Aceite:
+
+- [x] admin vê ranking de gasto (`/app/admin/usage`, com totais e por cargo vs orçamento)
+- [x] user disabled não autentica (`governance.test.ts`)
+- [x] mudança de cargo altera starters/knowledge na próxima request (snapshot já gravado no lote 2)
+- [x] orçamento do cargo estourado → SSE `event: error BUDGET_EXCEEDED` sem chamar o modelo (5 testes novos; server 33 pass)
+
+Correções de typecheck pré-existentes aproveitadas:
+
+- [x] `clsx` + `tailwind-merge` nas deps do web
+- [x] `Select` Base UI usado como select nativo em `admin/users.tsx` e `admin/models.tsx`
+
+Fora: export CSV, retenção de conversas, rate limit persistido (lote 8).
 
 ## Lote 6 — RAG
 

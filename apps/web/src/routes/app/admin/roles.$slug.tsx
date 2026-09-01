@@ -37,6 +37,7 @@ function RoleForm({ role }: { role: RoleDetail }) {
   const [description, setDescription] = useState(role.description);
   const [systemPrompt, setSystemPrompt] = useState(role.systemPrompt);
   const [welcomeMd, setWelcomeMd] = useState(role.welcomeMd);
+  const [budget, setBudget] = useState(role.monthlyBudgetUsd ?? "");
   const [startersText, setStartersText] = useState(
     role.starters.map((starter) => starter.prompt).join("\n"),
   );
@@ -45,7 +46,13 @@ function RoleForm({ role }: { role: RoleDetail }) {
     mutationFn: async () => {
       await api(`/api/roles/${role.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ name, description, systemPrompt, welcomeMd }),
+        body: JSON.stringify({
+          name,
+          description,
+          systemPrompt,
+          welcomeMd,
+          monthlyBudgetUsd: budget.trim() === "" ? null : Number(budget),
+        }),
       });
       const starters = startersText
         .split("\n")
@@ -120,6 +127,22 @@ function RoleForm({ role }: { role: RoleDetail }) {
             value={welcomeMd}
             onChange={(event) => setWelcomeMd(event.target.value)}
           />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="budget">Orçamento mensal do cargo (USD)</Label>
+          <Input
+            id="budget"
+            type="number"
+            step="0.01"
+            min="0"
+            className={fieldClass}
+            placeholder="sem limite"
+            value={budget}
+            onChange={(event) => setBudget(event.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Soma do gasto de todos os usuários deste cargo no mês. Vazio = sem limite.
+          </p>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="starters">Perguntas-guia (uma por linha)</Label>

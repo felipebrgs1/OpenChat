@@ -38,6 +38,7 @@ export const publicUserSchema = z.object({
   onboardedAt: z.string().nullable(),
   image: z.string().nullable(),
   creditBalance: z.string(),
+  monthlyBudgetUsd: z.string().nullable(),
   personalPrompt: z.string().nullable(),
   memorySummary: z.string().nullable(),
   autoLearn: z.boolean(),
@@ -164,6 +165,7 @@ export const patchRoleBodySchema = z.object({
   description: z.string().min(1).optional(),
   systemPrompt: z.string().min(1).optional(),
   welcomeMd: z.string().min(1).optional(),
+  monthlyBudgetUsd: z.number().nullable().optional(),
 });
 export type PatchRoleBody = z.infer<typeof patchRoleBodySchema>;
 
@@ -187,6 +189,7 @@ export const patchAdminUserBodySchema = z.object({
   roleId: z.string().uuid().nullable().optional(),
   status: z.enum(["active", "disabled"]).optional(),
   isAdmin: z.boolean().optional(),
+  monthlyBudgetUsd: z.number().nullable().optional(),
 });
 export type PatchAdminUserBody = z.infer<typeof patchAdminUserBodySchema>;
 
@@ -204,21 +207,51 @@ export const modelsResponseSchema = z.object({
 });
 export type ModelsResponse = z.infer<typeof modelsResponseSchema>;
 
+export const patchAdminSettingsBodySchema = z.object({
+  defaultModel: z.string().min(1).optional(),
+  fallbackModel: z.string().min(1).optional(),
+  allowedModels: z.array(z.string().min(1)).min(1).optional(),
+  globalSystemPrompt: z.string().min(1).optional(),
+  monthlyBudgetUsd: z.number().nullable().optional(),
+});
+export type PatchAdminSettingsBody = z.infer<typeof patchAdminSettingsBodySchema>;
+
 export const adminSettingsSchema = z.object({
   name: z.string(),
   defaultModel: z.string(),
   fallbackModel: z.string(),
   allowedModels: z.array(z.string()),
+  globalSystemPrompt: z.string(),
+  monthlyBudgetUsd: z.string().nullable(),
   catalog: z.array(modelOptionSchema),
 });
 export type AdminSettings = z.infer<typeof adminSettingsSchema>;
 
-export const patchAdminSettingsBodySchema = z.object({
-  defaultModel: z.string().min(1).optional(),
-  fallbackModel: z.string().min(1).optional(),
-  allowedModels: z.array(z.string().min(1)).min(1).optional(),
+export const adminUsageBucketSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  messages: z.number().int(),
+  promptTokens: z.number().int(),
+  completionTokens: z.number().int(),
+  costUsd: z.string(),
+  credits: z.string(),
 });
-export type PatchAdminSettingsBody = z.infer<typeof patchAdminSettingsBodySchema>;
+export type AdminUsageBucket = z.infer<typeof adminUsageBucketSchema>;
+
+export const adminUsageResponseSchema = z.object({
+  since: z.string(),
+  until: z.string(),
+  total: adminUsageBucketSchema,
+  byUser: z.array(adminUsageBucketSchema),
+  byRole: z.array(
+    adminUsageBucketSchema.extend({
+      budgetUsd: z.string().nullable(),
+    }),
+  ),
+  byModel: z.array(adminUsageBucketSchema),
+  byDay: z.array(adminUsageBucketSchema),
+});
+export type AdminUsageResponse = z.infer<typeof adminUsageResponseSchema>;
 
 export const conversationSchema = z.object({
   id: z.string().uuid(),

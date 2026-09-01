@@ -19,16 +19,22 @@ export const adminSettingsRoutes = new Hono<{ Variables: { user: AuthUser } }>()
 
 adminSettingsRoutes.use("*", requireAuth, requireAdmin);
 
+async function settingsResponse(row: typeof organizationSettings.$inferSelect) {
+  const catalog = await listOpenRouterModels(row.openrouterBaseUrl);
+  return {
+    name: row.name,
+    defaultModel: effectiveDefaultModel(row),
+    fallbackModel: row.fallbackModel || DEFAULT_MODEL_ID,
+    allowedModels: effectiveAllowedModels(row.allowedModels, row.defaultModel),
+    globalSystemPrompt: row.globalSystemPrompt,
+    monthlyBudgetUsd: row.monthlyBudgetUsd,
+    catalog,
+  };
+}
+
 adminSettingsRoutes.get("/", async (c) => {
   const settings = await loadOrgSettings();
-  const catalog = await listOpenRouterModels(settings.openrouterBaseUrl);
-  return c.json({
-    name: settings.name,
-    defaultModel: effectiveDefaultModel(settings),
-    fallbackModel: settings.fallbackModel || DEFAULT_MODEL_ID,
-    allowedModels: effectiveAllowedModels(settings.allowedModels, settings.defaultModel),
-    catalog,
-  });
+  return c.json(await settingsResponse(settings));
 });
 
 adminSettingsRoutes.patch("/", async (c) => {
@@ -52,6 +58,13 @@ adminSettingsRoutes.patch("/", async (c) => {
       allowedModels,
       defaultModel,
       fallbackModel: allowedModels.includes(fallbackModel) ? fallbackModel : defaultModel,
+      globalSystemPrompt: body.globalSystemPrompt ?? settings.globalSystemPrompt,
+      monthlyBudgetUsd:
+        body.monthlyBudgetUsd === undefined
+          ? settings.monthlyBudgetUsd
+          : body.monthlyBudgetUsd === null
+            ? null
+            : body.monthlyBudgetUsd.toFixed(4),
       updatedAt: new Date(),
     })
     .where(eq(organizationSettings.id, settings.id))
@@ -64,14 +77,7 @@ adminSettingsRoutes.patch("/", async (c) => {
     action: "settings.update",
     entityType: "organization_settings",
     entityId: row.id,
-    meta: { defaultModel: row.defaultModel, allowedModels: row.allowedModels },
+    meta: body,
   });
-  const catalog = await listOpenRouterModels(row.openrouterBaseUrl);
-  return c.json({
-    name: row.name,
-    defaultModel: row.defaultModel,
-    fallbackModel: row.fallbackModel,
-    allowedModels: row.allowedModels,
-    catalog,
-  });
+  return c.json(await settingsResponse(row));
 });

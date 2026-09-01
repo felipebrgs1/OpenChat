@@ -2,7 +2,6 @@ import type { AdminUser, RoleSummary } from "@nexo/contracts";
 import { Button } from "@nexo/ui/components/button";
 import { Input } from "@nexo/ui/components/input";
 import { Label } from "@nexo/ui/components/label";
-import { Select } from "@nexo/ui/components/select";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -13,6 +12,9 @@ import { api, ApiRequestError } from "@/lib/api";
 export const Route = createFileRoute("/app/admin/users")({
   component: AdminUsersPage,
 });
+
+const selectClass =
+  "h-9 rounded-xl border border-input bg-background px-3 text-sm md:text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50";
 
 function AdminUsersPage() {
   const queryClient = useQueryClient();
@@ -83,9 +85,9 @@ function AdminUsersPage() {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="invite-role">Cargo</Label>
-          <Select
+          <select
             id="invite-role"
-            className="min-w-48"
+            className={`${selectClass} min-w-48`}
             value={roleId}
             onChange={(event) => setRoleId(event.target.value)}
           >
@@ -95,11 +97,11 @@ function AdminUsersPage() {
                 {role.name}
               </option>
             ))}
-          </Select>
-        </div>
-        <Button type="submit" className="rounded-xl" disabled={invite.isPending}>
-          Convidar
-        </Button>
+            </select>
+          </div>
+          <Button type="submit" className="rounded-xl" disabled={invite.isPending}>
+            Convidar
+          </Button>
       </form>
 
       <div className="overflow-x-auto rounded-2xl border">
@@ -120,8 +122,8 @@ function AdminUsersPage() {
                 <td className="px-4 py-3">{row.name}</td>
                 <td className="px-4 py-3">{row.email}</td>
                 <td className="px-4 py-3">
-                  <Select
-                    className="min-w-40"
+                  <select
+                    className={`${selectClass} min-w-40`}
                     value={row.roleId ?? ""}
                     onChange={(event) =>
                       patchUser.mutate({
@@ -136,7 +138,7 @@ function AdminUsersPage() {
                         {role.name}
                       </option>
                     ))}
-                  </Select>
+                  </select>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
@@ -147,8 +149,8 @@ function AdminUsersPage() {
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <Select
-                    className="min-w-36"
+                  <select
+                    className={`${selectClass} min-w-36`}
                     value={row.status === "invited" ? "invited" : row.status}
                     disabled={row.status === "invited"}
                     onChange={(event) =>
@@ -161,7 +163,7 @@ function AdminUsersPage() {
                     {row.status === "invited" ? <option value="invited">convidado</option> : null}
                     <option value="active">ativo</option>
                     <option value="disabled">desativado</option>
-                  </Select>
+                  </select>
                 </td>
                 <td className="px-4 py-3">
                   <input
@@ -211,6 +213,80 @@ function CreditAdjust({ userId }: { userId: string }) {
       />
       <Button size="xs" variant="ghost" className="h-7 rounded-full px-2 text-xs" disabled={!amount || mutate.isPending} onClick={() => mutate.mutate()}>
         +
+      </Button>
+    </span>
+  );
+}
+
+function BudgetInput({ userId, value }: { userId: string; value: string | null }) {
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState(value === null ? "" : value);
+  const [editing, setEditing] = useState(false);
+
+  const mutate = useMutation({
+    mutationFn: (input: { monthlyBudgetUsd: number | null }) =>
+      api(`/api/admin/users/${userId}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      toast.success("Orçamento atualizado.");
+      setEditing(false);
+    },
+    onError: (e) => toast.error(e instanceof ApiRequestError ? e.message : "Falha ao salvar."),
+  });
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="text-left"
+        onClick={() => {
+          setDraft(value === null ? "" : value);
+          setEditing(true);
+        }}
+      >
+        {value === null ? (
+          <span className="text-xs text-muted-foreground">sem limite · definir</span>
+        ) : (
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
+            {Number(value).toFixed(2)} USD
+          </span>
+        )}
+      </button>
+    );
+  }
+
+  return (
+    <span className="flex items-center gap-1">
+      <Input
+        className="h-7 w-24 rounded-full px-2 text-xs"
+        type="number"
+        step="0.01"
+        min="0"
+        placeholder="10.00"
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            mutate.mutate({ monthlyBudgetUsd: draft.trim() === "" ? null : Number(draft) });
+          }
+          if (event.key === "Escape") {
+            setEditing(false);
+          }
+        }}
+      />
+      <Button
+        size="xs"
+        variant="ghost"
+        className="h-7 rounded-full px-2 text-xs"
+        disabled={mutate.isPending}
+        onClick={() => mutate.mutate({ monthlyBudgetUsd: draft.trim() === "" ? null : Number(draft) })}
+      >
+        ✓
       </Button>
     </span>
   );

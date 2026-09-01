@@ -10,7 +10,8 @@ import { streamSSE } from "hono/streaming";
 
 import { notFound } from "../lib/errors";
 import { publicLlmError, streamNexoTurn } from "../lib/pi-harness";
-import { creditsFromUsd, deductCredits, getUserBalance } from "../lib/credits";
+import { assertBudgets } from "../lib/budget";
+import { creditsFromUsd, deductCredits } from "../lib/credits";
 import { buildKnowledgeBlock } from "../lib/knowledge";
 import { maybeLearnFromTurn } from "../lib/memory";
 import { assertSelectableModel, effectiveDefaultModel, loadOrgSettings } from "../lib/org";
@@ -247,15 +248,19 @@ conversationRoutes.post("/:id/messages", async (c) => {
       }),
     });
 
-    // saldo em créditos (1000 créditos = US$1)
-    const balanceStr = await getUserBalance(user.id);
-    const balance = parseFloat(balanceStr);
-    if (balance <= 0) {
-      const msg = `Saldo insuficiente: ${balance.toFixed(2)} créditos. Recarregue.`;
-      await db.update(messages).set({ error: msg }).where(eq(messages.id, assistantMessage.id));
+    // controle fino de gastos: saldo + orçamento mensal user/cargo/org
+    try {
+      await assertBudgets({ userId: user.id, orgSettings: settings });
+    } catch (budgetError) {
+      const message =
+        budgetError instanceof Error ? budgetError.message : "Orçamento atingido.";
+      await db
+        .update(messages)
+        .set({ error: message })
+        .where(eq(messages.id, assistantMessage.id));
       await stream.writeSSE({
         event: "error",
-        data: JSON.stringify({ code: "BUDGET_EXCEEDED", message: msg }),
+        data: JSON.stringify({ code: "BUDGET_EXCEEDED", message }),
       });
       return;
     }

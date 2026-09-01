@@ -12,8 +12,10 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import {
   BookOpenText,
+  ChartBar,
   ChevronsUpDown,
   Cpu,
+  Settings2,
   LogOut,
   Monitor,
   Moon,
@@ -103,6 +105,20 @@ export function UserMenu({ user, roleName }: { user: PublicUser | null; roleName
               >
                 <BookOpenText className="size-4" />
                 Bases
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="rounded-lg"
+                onClick={() => void navigate({ to: "/app/admin/usage" })}
+              >
+                <ChartBar className="size-4" />
+                Uso
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="rounded-lg"
+                onClick={() => void navigate({ to: "/app/admin/settings" })}
+              >
+                <Settings2 className="size-4" />
+                Configurações
               </DropdownMenuItem>
             </>
           ) : null}

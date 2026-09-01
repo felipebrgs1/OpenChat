@@ -55,6 +55,12 @@ adminUserRoutes.patch("/:id", async (c) => {
       roleId: body.roleId === undefined ? current.roleId : body.roleId,
       status: body.status ?? current.status,
       isAdmin: body.isAdmin ?? current.isAdmin,
+      monthlyBudgetUsd:
+        body.monthlyBudgetUsd === undefined
+          ? (current as unknown as { monthlyBudgetUsd: string | null }).monthlyBudgetUsd
+          : body.monthlyBudgetUsd === null
+            ? null
+            : body.monthlyBudgetUsd.toFixed(4),
       updatedAt: new Date(),
     })
     .where(eq(users.id, id))
