@@ -1,14 +1,11 @@
 /**
- * R4 — Embeddings multilíngues para português.
- * Default: openai/text-embedding-3-small (1536 dims) — multilíngue, barato e estável para pt-BR.
- * Alternativas via EMBEDDING_MODEL (OpenRouter):
- * - cohere/embed-multilingual-v3.0 (1024 dims, ótimo para pt-BR, requer reindex)
- * - voyageai/voyage-multilingual-2 (1024 dims)
- * - openai/text-embedding-3-large (3072 dims, melhor recall, requer migração)
- * Env: EMBEDDING_MODEL, OPENROUTER_API_KEY, OPENROUTER_HTTP_REFERER, OPENROUTER_APP_TITLE
+ * R5/R6 — Embeddings padrão: perplexity/pplx-embed-v1-4b (2560 dims) — multilíngue 4B, ótimo para pt-BR.
+ * Rerank padrão: voyageai/rerank-2.5-lite (multilíngue leve, rápido).
+ * Env: EMBEDDING_MODEL, EMBEDDING_DIMENSIONS, RERANKER_MODEL, OPENROUTER_API_KEY, COHERE_API_KEY
+ * Para reindex após troca de modelo: bun --cwd packages/db src/reindex.ts
  */
-export const EMBEDDING_DIMENSIONS = Number(process.env.EMBEDDING_DIMENSIONS ?? 1536);
-export const DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small";
+export const EMBEDDING_DIMENSIONS = Number(process.env.EMBEDDING_DIMENSIONS ?? 2560);
+export const DEFAULT_EMBEDDING_MODEL = "perplexity/pplx-embed-v1-4b";
 
 export function embeddingModel(): string {
   return process.env.EMBEDDING_MODEL?.trim() || DEFAULT_EMBEDDING_MODEL;

@@ -1,5 +1,6 @@
 import {
   boolean,
+  halfvec,
   index,
   integer,
   jsonb,
@@ -11,7 +12,6 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
-  vector,
 } from "drizzle-orm/pg-core";
 
 export const userStatusEnum = pgEnum("user_status", ["invited", "active", "disabled"]);
@@ -156,9 +156,33 @@ export const messages = pgTable(
     latencyMs: integer("latency_ms"),
     finishReason: text("finish_reason"),
     error: text("error"),
+    sources: jsonb("sources").$type<unknown[]>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("message_conversation_created_idx").on(table.conversationId, table.createdAt)],
+);
+
+export const feedbackRatingEnum = pgEnum("feedback_rating", ["util", "incorreta", "desatualizada", "sem_fonte"]);
+
+export const knowledgeFeedback = pgTable(
+  "knowledge_feedback",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    rating: feedbackRatingEnum("rating").notNull(),
+    comment: text("comment"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("knowledge_feedback_message_idx").on(table.messageId),
+    index("knowledge_feedback_user_idx").on(table.userId),
+    index("knowledge_feedback_rating_idx").on(table.rating),
+  ],
 );
 
 export const usageEvents = pgTable(
@@ -369,7 +393,7 @@ export const knowledgeChunks = pgTable(
     }),
     chunkIndex: integer("chunk_index").notNull(),
     content: text("content").notNull(),
-    embedding: vector("embedding", { dimensions: 1536 }),
+    embedding: halfvec("embedding", { dimensions: 2560 }),
     // R2/R3: evolução para busca híbrida e rastreabilidade
     page: integer("page"),
     heading: text("heading"),

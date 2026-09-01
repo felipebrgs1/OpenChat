@@ -1,11 +1,13 @@
 import { sql } from "drizzle-orm";
 
 import { embedQuery, embeddingModel, vectorLiteral } from "./embeddings";
+import { hasSufficientEvidence, rerankChunks } from "./reranker";
 
 export type RagChunk = {
   chunkId: string;
   documentId: string;
   collectionId: string;
+  revisionId: string | null;
   title: string;
   content: string;
   heading: string | null;
@@ -15,6 +17,28 @@ export type RagChunk = {
   textRank: number | null;
   vectorRank: number | null;
 };
+
+export type RagSource = {
+  documentId: string;
+  revisionId: string | null;
+  chunkId: string;
+  title: string;
+  page: number | null;
+  heading: string | null;
+  excerpt: string;
+};
+
+export function toRagSources(chunks: RagChunk[]): RagSource[] {
+  return chunks.map((c) => ({
+    documentId: c.documentId,
+    revisionId: c.revisionId,
+    chunkId: c.chunkId,
+    title: c.title,
+    page: c.page,
+    heading: c.heading,
+    excerpt: c.content.slice(0, 400),
+  }));
+}
 
 export const RAG_TOP_K = 6;
 export const RAG_TOKEN_CAP = 4000;
@@ -50,6 +74,7 @@ type VectorRow = {
   chunk_id: string;
   document_id: string;
   collection_id: string;
+  revision_id: string | null;
   title: string;
   content: string;
   heading: string | null;
@@ -61,6 +86,7 @@ type TextRow = {
   chunk_id: string;
   document_id: string;
   collection_id: string;
+  revision_id: string | null;
   title: string;
   content: string;
   heading: string | null;
@@ -77,8 +103,9 @@ export async function retrieveKnowledgeChunks(
   query: string,
   roleId: string | null,
   topK = RAG_TOP_K,
+  opts?: { isAdmin?: boolean },
 ): Promise<RagChunk[]> {
-  const { chunks } = await retrieveKnowledgeChunksWithTelemetry(query, roleId, topK);
+  const { chunks } = await retrieveKnowledgeChunksWithTelemetry(query, roleId, topK, opts);
   return chunks;
 }
 
@@ -86,6 +113,7 @@ export async function retrieveKnowledgeChunksWithTelemetry(
   query: string,
   roleId: string | null,
   topK = RAG_TOP_K,
+  opts?: { isAdmin?: boolean },
 ): Promise<{
   chunks: RagChunk[];
   telemetry: {
@@ -100,7 +128,9 @@ export async function retrieveKnowledgeChunksWithTelemetry(
     costUsd: number | null;
     vectorMs: number | null;
     textMs: number | null;
+    rerankMs: number | null;
     rrfK: number;
+    hasSufficientEvidence: boolean;
   };
 }> {
   const start = performance.now();
@@ -121,7 +151,9 @@ export async function retrieveKnowledgeChunksWithTelemetry(
         costUsd: null,
         vectorMs: null,
         textMs: null,
+        rerankMs: null,
         rrfK: RAG_RRF_K,
+        hasSufficientEvidence: false,
       },
     };
   }
@@ -129,6 +161,7 @@ export async function retrieveKnowledgeChunksWithTelemetry(
   const candidateLimit = Math.max(topK * RAG_CANDIDATE_MULTIPLIER, topK + 4);
   // normaliza query para tsvector: remove chars que quebram tsquery
   const tsQuery = q.slice(0, 400);
+  const isAdmin = opts?.isAdmin === true;
 
   // 1) vector search (se embedding falhar, vectorRows = [])
   let vectorRows: VectorRow[] = [];
@@ -143,22 +176,23 @@ export async function retrieveKnowledgeChunksWithTelemetry(
     const tokens = Math.ceil(q.length / 4);
     costUsd = (tokens / 1_000_000) * 0.02;
     const literal = vectorLiteral(embedding);
-    const perm = permissionFilterSql(roleId);
+    const perm = isAdmin ? sql`TRUE` : permissionFilterSql(roleId!);
     const res = await sqlExecute<VectorRow>(sql`
       SELECT
         kc.id as chunk_id,
         kc.document_id,
         kc.collection_id,
+        kc.revision_id as revision_id,
         kd.title as title,
         kc.content as content,
         kc.heading as heading,
         kc.page as page,
-        kc.embedding <=> ${literal}::vector as distance
+        kc.embedding <=> ${literal}::halfvec(2560) as distance
       FROM knowledge_chunk kc
       JOIN knowledge_document kd ON kd.id = kc.document_id AND kd.deleted_at IS NULL
       JOIN knowledge_collection kcol ON kcol.id = kc.collection_id AND kcol.deleted_at IS NULL
       WHERE ${perm}
-      ORDER BY kc.embedding <=> ${literal}::vector ASC
+      ORDER BY kc.embedding <=> ${literal}::halfvec(2560) ASC
       LIMIT ${sql.raw(String(candidateLimit))}
     `);
     vectorRows = res;
@@ -172,13 +206,14 @@ export async function retrieveKnowledgeChunksWithTelemetry(
   let textMs: number | null = null;
   try {
     const t0 = performance.now();
-    const perm = permissionFilterSql(roleId);
+    const perm = isAdmin ? sql`TRUE` : permissionFilterSql(roleId!);
     // websearch_to_tsquery lida melhor com siglas, códigos e frases; simple como fallback para códigos com hífen
     const res = await sqlExecute<TextRow>(sql`
       SELECT
         kc.id as chunk_id,
         kc.document_id,
         kc.collection_id,
+        kc.revision_id as revision_id,
         kd.title as title,
         kc.content as content,
         kc.heading as heading,
@@ -200,6 +235,7 @@ export async function retrieveKnowledgeChunksWithTelemetry(
           kc.id as chunk_id,
           kc.document_id,
           kc.collection_id,
+          kc.revision_id as revision_id,
           kd.title as title,
           kc.content as content,
           kc.heading as heading,
@@ -222,8 +258,24 @@ export async function retrieveKnowledgeChunksWithTelemetry(
   // 3) RRF
   const fused = rrfCombine(vectorRows, textRows, candidateLimit);
 
-  // 4) deduplicação + diversidade
-  const { deduped, chosen } = dedupAndDiversify(fused, topK);
+  // 3b) R5 — rerank dos melhores candidatos (Cohere ou heurística) antes do corte final
+  let reranked: RagChunk[] = fused;
+  let rerankMs: number | null = null;
+  if (fused.length > 0) {
+    const t0 = performance.now();
+    try {
+      reranked = await rerankChunks(q, fused.slice(0, Math.min(fused.length, 12)));
+      // mantém ordem reranqueada mas preserva tail não reranqueado
+      if (fused.length > 12) reranked = [...reranked, ...fused.slice(12)];
+    } catch (e) {
+      console.warn("rerank falhou, usando RRF", e instanceof Error ? e.message : String(e));
+      reranked = fused;
+    }
+    rerankMs = Math.round(performance.now() - t0);
+  }
+
+  // 4) deduplicação + diversidade (4–8 finais)
+  const { deduped, chosen } = dedupAndDiversify(reranked, topK);
 
   const latencyMs = Math.round(performance.now() - start);
   const telemetry = {
@@ -238,7 +290,9 @@ export async function retrieveKnowledgeChunksWithTelemetry(
     costUsd,
     vectorMs,
     textMs,
+    rerankMs,
     rrfK: RAG_RRF_K,
+    hasSufficientEvidence: hasSufficientEvidence(chosen),
   };
 
   // telemetria estruturada (R4)
@@ -285,6 +339,7 @@ function rrfCombine(vectorRows: VectorRow[], textRows: TextRow[], _candidateLimi
         chunkId: r.chunk_id,
         documentId: r.document_id,
         collectionId: r.collection_id,
+        revisionId: r.revision_id,
         title: r.title,
         content: r.content,
         heading: r.heading,
@@ -312,6 +367,7 @@ function rrfCombine(vectorRows: VectorRow[], textRows: TextRow[], _candidateLimi
         chunkId: r.chunk_id,
         documentId: r.document_id,
         collectionId: r.collection_id,
+        revisionId: r.revision_id,
         title: r.title,
         content: r.content,
         heading: r.heading,

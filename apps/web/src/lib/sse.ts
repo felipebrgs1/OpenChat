@@ -6,6 +6,8 @@ import { getSession } from "./session";
 const baseUrl = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
 
 export type StreamMeta = { messageId: string; userMessageId?: string; model: string };
+export type RagSource = { documentId: string; revisionId: string | null; chunkId: string; title: string; page: number | null; heading: string | null; excerpt: string };
+export type StreamSources = { messageId: string; sources: RagSource[]; hasSources: boolean; telemetry?: unknown };
 export type StreamDone = {
   messageId: string;
   promptTokens: number;
@@ -14,6 +16,8 @@ export type StreamDone = {
   tps?: number | null;
   latencyMs?: number | null;
   balanceAfter?: string | null;
+  sources?: RagSource[] | null;
+  hasSources?: boolean | null;
 };
 
 export async function streamChat(input: {
@@ -23,6 +27,7 @@ export async function streamChat(input: {
   starterId?: string | null;
   signal?: AbortSignal;
   onMeta: (meta: StreamMeta) => void;
+  onSources?: (sources: StreamSources) => void;
   onDelta: (text: string) => void;
   onDone: (done: StreamDone) => void;
   onError: (code: ErrorCode | "UNKNOWN", message: string) => void;
@@ -84,6 +89,7 @@ function dispatchSse(
   part: string,
   input: {
     onMeta: (meta: StreamMeta) => void;
+    onSources?: (s: StreamSources) => void;
     onDelta: (text: string) => void;
     onDone: (done: StreamDone & Record<string, unknown>) => void;
     onError: (code: ErrorCode | "UNKNOWN", message: string) => void;
@@ -105,6 +111,8 @@ function dispatchSse(
   const data = JSON.parse(raw) as Record<string, unknown>;
   if (event === "meta") {
     input.onMeta(data as StreamMeta);
+  } else if (event === "sources") {
+    input.onSources?.(data as StreamSources);
   } else if (event === "delta") {
     input.onDelta(String(data.text ?? ""));
   } else if (event === "done") {

@@ -20,9 +20,14 @@ import { notFound } from "../lib/errors";
 import { publicLlmError, streamNexoTurn } from "../lib/pi-harness";
 import { assertBudgets } from "../lib/budget";
 import { creditsFromUsd, deductCredits } from "../lib/credits";
-import { buildKnowledgeBlock } from "../lib/knowledge";
 import { maybeLearnFromTurn } from "../lib/memory";
-import { buildRagKnowledgeBlock, formatCitations, retrieveKnowledgeChunks } from "../lib/rag";
+import {
+  buildRagKnowledgeBlock,
+  formatCitations,
+  retrieveKnowledgeChunksWithTelemetry,
+  toRagSources,
+} from "../lib/rag";
+import { hasSufficientEvidenceForQuery } from "../lib/reranker";
 import { assertSelectableModel, effectiveDefaultModel, loadOrgSettings } from "../lib/org";
 import { parseBody } from "../lib/parse";
 import { assemblePrompt } from "../lib/prompt";
@@ -61,6 +66,7 @@ function toMessage(row: typeof messages.$inferSelect) {
     latencyMs: (row as unknown as { latencyMs: number | null }).latencyMs ?? null,
     finishReason: row.finishReason,
     error: row.error,
+    sources: (row as unknown as { sources: unknown | null }).sources ?? null,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -223,19 +229,39 @@ conversationRoutes.post("/:id/messages", async (c) => {
     memorySummary: string | null;
     autoLearn: boolean | null;
   };
-  // RAG: retrieval top-6 filtrado por cargo; fallback para bloco legado se RAG vazio
-  let ragChunks: Awaited<ReturnType<typeof retrieveKnowledgeChunks>> = [];
+  // R5 — RAG híbrido+Rerank com fontes estruturadas e estado “sem fonte confiável”
+  let ragChunks: Awaited<ReturnType<typeof retrieveKnowledgeChunksWithTelemetry>>["chunks"] = [];
+  let ragSources: ReturnType<typeof toRagSources> = [];
   let knowledgeBlock = "";
+  let hasSources = false;
+  let ragTelemetry: Awaited<ReturnType<typeof retrieveKnowledgeChunksWithTelemetry>>["telemetry"] | null = null;
   if (user.roleId) {
     try {
-      ragChunks = await retrieveKnowledgeChunks(content, user.roleId, 6);
-    } catch {
+      const r = await retrieveKnowledgeChunksWithTelemetry(content, user.roleId, 6, {
+        isAdmin: user.isAdmin,
+      });
+      ragChunks = r.chunks;
+      ragTelemetry = r.telemetry;
+      hasSources = hasSufficientEvidenceForQuery(content, ragChunks) && ragTelemetry.hasSufficientEvidence;
+      if (hasSources && ragChunks.length > 0) {
+        knowledgeBlock = buildRagKnowledgeBlock(ragChunks);
+        ragSources = toRagSources(ragChunks);
+      } else {
+        // R5: estado explícito sem fonte — não injeta conhecimento legado que mascararia ausência
+        ragChunks = [];
+        ragSources = [];
+        hasSources = false;
+        knowledgeBlock = `[SEM FONTE INTERNA CONFIÁVEL]
+Não foi encontrada fonte interna confiável para esta pergunta na base autorizada para este cargo. Se a pergunta for sobre valor, multa, contrato, inadimplência ou dado de aluno, responda exatamente: "Não encontrei fonte interna confiável" e indique o cargo dono do assunto ou como escalar. Não invente.
+`; 
+      }
+    } catch (e) {
+      console.warn("rag R5 falhou, fallback sem fonte", e);
       ragChunks = [];
-    }
-    if (ragChunks.length > 0) {
-      knowledgeBlock = buildRagKnowledgeBlock(ragChunks);
-    } else {
-      knowledgeBlock = await buildKnowledgeBlock(user.roleId);
+      ragSources = [];
+      hasSources = false;
+      knowledgeBlock = `[SEM FONTE INTERNA CONFIÁVEL]
+Não foi encontrada fonte interna confiável.`;
     }
   }
 
@@ -272,6 +298,30 @@ conversationRoutes.post("/:id/messages", async (c) => {
         model,
       }),
     });
+
+    // R5 — fontes estruturadas: emitidas logo após meta para UI renderizar citações verificáveis
+    await stream.writeSSE({
+      event: "sources",
+      data: JSON.stringify({
+        messageId: assistantMessage.id,
+        sources: ragSources,
+        hasSources,
+        telemetry: ragTelemetry
+          ? {
+              latencyMs: ragTelemetry.latencyMs,
+              candidates: ragTelemetry.candidates,
+              chosen: ragTelemetry.chosen,
+              costUsd: ragTelemetry.costUsd,
+              hasSufficientEvidence: ragTelemetry.hasSufficientEvidence,
+            }
+          : null,
+      }),
+    });
+    // persiste fontes (mesmo vazias) para distinguir "sem fonte" de legado
+    await db
+      .update(messages)
+      .set({ sources: ragSources as unknown as never })
+      .where(eq(messages.id, assistantMessage.id));
 
     // controle fino de gastos: saldo + orçamento mensal user/cargo/org
     try {
@@ -348,6 +398,7 @@ conversationRoutes.post("/:id/messages", async (c) => {
           tps: String(tps),
           latencyMs,
           finishReason: usage.finishReason ?? "stop",
+          sources: ragSources as unknown as never,
         })
         .where(eq(messages.id, assistantMessage.id));
 
@@ -392,6 +443,8 @@ conversationRoutes.post("/:id/messages", async (c) => {
           tps,
           latencyMs,
           balanceAfter,
+          sources: ragSources,
+          hasSources,
         }),
       });
 

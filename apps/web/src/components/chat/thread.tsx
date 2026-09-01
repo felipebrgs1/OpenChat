@@ -7,6 +7,7 @@ import { useCallback, useLayoutEffect, useEffect, useRef, useState } from "react
 import { toast } from "sonner";
 
 import { ChatComposer } from "@/components/chat/composer";
+import { FeedbackBar, RagSources } from "@/components/chat/rag-sources";
 import { useModel } from "@/components/model-provider";
 import { UserAvatar } from "@/components/user-avatar";
 import { api, ApiRequestError } from "@/lib/api";
@@ -41,6 +42,7 @@ export function ChatThread({
   const [streaming, setStreaming] = useState(false);
   const [slow, setSlow] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [feedbackDone, setFeedbackDone] = useState<Record<string, string>>({});
   const abortRef = useRef<AbortController | null>(null);
   const sentInitial = useRef(false);
   const slowTimer = useRef<number | null>(null);
@@ -111,6 +113,15 @@ export function ChatThread({
               (current ?? []).map((row) =>
                 row.id === tempAssistant.id
                   ? { ...row, id: meta.messageId, model: meta.model }
+                  : row,
+              ),
+            );
+          },
+          onSources: (src) => {
+            setLive((current) =>
+              (current ?? []).map((row) =>
+                row.id === (src.messageId === assistantId ? assistantId : row.id) || row.id === assistantId
+                  ? { ...row, sources: src.sources as never, hasSources: src.hasSources as never }
                   : row,
               ),
             );
@@ -248,6 +259,25 @@ export function ChatThread({
                       ) : null}
                       {isLastAssistant && message.content ? (
                         <span className="ml-0.5 inline-block h-4 w-[2px] translate-y-0.5 animate-pulse bg-foreground" />
+                      ) : null}
+                      {/* R5 — fontes estruturadas + estado sem fonte */}
+                      {Array.isArray((message as unknown as { sources?: unknown }).sources) ? (
+                        <RagSources
+                          sources={(message as unknown as { sources: import("@nexo/contracts").RagSource[] }).sources}
+                          hasSources={((message as unknown as { sources: import("@nexo/contracts").RagSource[] }).sources.length ?? 0) > 0}
+                        />
+                      ) : (message as unknown as { hasSources?: boolean }).hasSources === false ? (
+                        <RagSources sources={[]} hasSources={false} />
+                      ) : null}
+                      {!isUser && message.content && !isLastAssistant ? (
+                        feedbackDone[message.id] ? (
+                          <p className="mt-2 text-xs text-muted-foreground">Obrigado pelo feedback!</p>
+                        ) : (
+                          <FeedbackBar
+                            messageId={message.id}
+                            onFeedback={(rating) => setFeedbackDone((prev) => ({ ...prev, [message.id]: rating }))}
+                          />
+                        )
                       ) : null}
                     </div>
                   )}

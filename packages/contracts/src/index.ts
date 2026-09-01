@@ -279,6 +279,17 @@ export const patchConversationBodySchema = z
   });
 export type PatchConversationBody = z.infer<typeof patchConversationBodySchema>;
 
+export const ragSourceSchema = z.object({
+  documentId: z.string().uuid(),
+  revisionId: z.string().uuid().nullable(),
+  chunkId: z.string().uuid(),
+  title: z.string(),
+  page: z.number().int().nullable(),
+  heading: z.string().nullable(),
+  excerpt: z.string(),
+});
+export type RagSource = z.infer<typeof ragSourceSchema>;
+
 export const messageSchema = z.object({
   id: z.string().uuid(),
   conversationId: z.string().uuid(),
@@ -292,9 +303,20 @@ export const messageSchema = z.object({
   latencyMs: z.number().int().nullable(),
   finishReason: z.string().nullable(),
   error: z.string().nullable(),
+  sources: z.array(ragSourceSchema).nullable().optional(),
   createdAt: z.string(),
 });
 export type ChatMessage = z.infer<typeof messageSchema>;
+
+export const feedbackRatingSchema = z.enum(["util", "incorreta", "desatualizada", "sem_fonte"]);
+export type FeedbackRating = z.infer<typeof feedbackRatingSchema>;
+
+export const createFeedbackBodySchema = z.object({
+  messageId: z.string().uuid(),
+  rating: feedbackRatingSchema,
+  comment: z.string().max(2000).optional(),
+});
+export type CreateFeedbackBody = z.infer<typeof createFeedbackBodySchema>;
 
 export const sendMessageBodySchema = z.object({
   content: z.string().min(1),
