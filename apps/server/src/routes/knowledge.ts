@@ -8,16 +8,19 @@ import {
   db,
   knowledgeChunks,
   knowledgeCollections,
+  knowledgeDocumentRevisions,
   knowledgeDocuments,
+  knowledgeIngestions,
   knowledgeRoles,
 } from "@nexo/db";
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { writeAudit } from "../lib/audit";
 import { forbidden, notFound } from "../lib/errors";
 import { chunkMarkdown } from "../lib/chunk";
 import { embedTexts } from "../lib/embeddings";
+import { enqueueIngestionAsync, processIngestion, validateUpload } from "../lib/ingestion";
 import {
   loadAllCollections,
   loadCollectionsForRole,
@@ -25,6 +28,7 @@ import {
   loadRoleLinks,
 } from "../lib/knowledge";
 import { parseBody } from "../lib/parse";
+import { buildStorageKey, getObject, getPresignedDownloadUrl, putObject } from "../lib/storage";
 import { requireAdmin, requireAuth, type AuthUser } from "../middleware/auth";
 
 export const knowledgeRoutes = new Hono<{ Variables: { user: AuthUser } }>();
@@ -90,8 +94,16 @@ async function guardCollectionRead(user: AuthUser, collectionId: string) {
   return row;
 }
 
+async function guardDocumentRead(user: AuthUser, documentId: string) {
+  const doc = (
+    await db.select().from(knowledgeDocuments).where(eq(knowledgeDocuments.id, documentId))
+  )[0];
+  if (!doc || doc.deletedAt) throw notFound("Documento não encontrado.");
+  await guardCollectionRead(user, doc.collectionId);
+  return doc;
+}
+
 async function reindexDocument(documentId: string, collectionId: string, bodyMd: string) {
-  // remove antigos
   await db.delete(knowledgeChunks).where(eq(knowledgeChunks.documentId, documentId));
   const chunks = chunkMarkdown(bodyMd);
   if (chunks.length === 0) return;
@@ -104,7 +116,6 @@ async function reindexDocument(documentId: string, collectionId: string, bodyMd:
       content,
       embedding: embeddings[i] ?? null,
     }));
-    // insere em batches para não estourar param limit
     for (let i = 0; i < rows.length; i += 64) {
       const batch = rows.slice(i, i + 64);
       await db.insert(knowledgeChunks).values(batch);
@@ -114,7 +125,6 @@ async function reindexDocument(documentId: string, collectionId: string, bodyMd:
       `reindex falhou para doc ${documentId}:`,
       e instanceof Error ? e.message : String(e),
     );
-    // fallback: salva chunks sem embedding para não bloquear criação
     try {
       const fallbackRows = chunks.map((content, i) => ({
         documentId,
@@ -127,35 +137,6 @@ async function reindexDocument(documentId: string, collectionId: string, bodyMd:
       }
     } catch {}
   }
-}
-
-async function extractTextFromFile(
-  file: File,
-): Promise<{ text: string; filename: string; mime: string }> {
-  const filename = file.name;
-  const mime = file.type || "application/octet-stream";
-  const lower = filename.toLowerCase();
-  if (lower.endsWith(".pdf")) {
-    try {
-      const buf = Buffer.from(await file.arrayBuffer());
-      // lazy import para não quebrar se pdf-parse não estiver instalado
-      // @ts-ignore
-      const mod: unknown = await import("pdf-parse").catch(() => null);
-      const pdfParse = (mod as { default?: (b: Buffer) => Promise<{ text: string }> })?.default;
-      if (pdfParse) {
-        const parsed = await pdfParse(buf);
-        return { text: parsed.text, filename, mime: mime || "application/pdf" };
-      }
-      // fallback: tenta extrair como texto simples
-      return { text: buf.toString("utf-8").slice(0, 200000), filename, mime };
-    } catch {
-      const buf = Buffer.from(await file.arrayBuffer());
-      return { text: buf.toString("utf-8").slice(0, 200000), filename, mime };
-    }
-  }
-  // txt/md
-  const text = await file.text();
-  return { text, filename, mime: mime || "text/markdown" };
 }
 
 // ---------- logado ----------
@@ -184,6 +165,114 @@ knowledgeRoutes.get("/:id", async (c) => {
     ...(await toSummary(row, docs, links)),
     documents: docs.map(toDocument),
   });
+});
+
+// download autorizado do arquivo original (por revisão ou documento atual)
+// GET /api/knowledge/revisions/:revisionId/download — protegido por cargo da coleção
+knowledgeRoutes.get("/revisions/:revisionId/download", async (c) => {
+  const user = c.get("user");
+  const revisionId = c.req.param("revisionId");
+  const rev = (
+    await db
+      .select()
+      .from(knowledgeDocumentRevisions)
+      .where(eq(knowledgeDocumentRevisions.id, revisionId))
+  )[0];
+  if (!rev) throw notFound("Revisão não encontrada.");
+  await guardDocumentRead(user, rev.documentId);
+  // presigned se S3, senão stream direto
+  const presigned = await getPresignedDownloadUrl(rev.storageKey, 900).catch(() => null);
+  if (presigned) {
+    return c.redirect(presigned, 302);
+  }
+  const buf = await getObject(rev.storageKey);
+  const safeFilename = rev.filename.replace(/"/g, "");
+  // @ts-ignore dom lib
+  return new Response(buf as unknown as BodyInit, {
+    headers: {
+      "Content-Type": rev.mime,
+      "Content-Disposition": `attachment; filename="${safeFilename}"`,
+      "Content-Length": String(buf.byteLength),
+      "Cache-Control": "private, max-age=60",
+    },
+  });
+});
+
+// lista revisões + ingestões de um documento
+knowledgeRoutes.get("/documents/:id/revisions", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  await guardDocumentRead(user, id);
+  const revisions = await db
+    .select()
+    .from(knowledgeDocumentRevisions)
+    .where(eq(knowledgeDocumentRevisions.documentId, id))
+    .orderBy(desc(knowledgeDocumentRevisions.revisionNumber));
+  const ingestionByRevision = new Map<string, typeof knowledgeIngestions.$inferSelect>();
+  if (revisions.length) {
+    const ingestions = await db
+      .select()
+      .from(knowledgeIngestions)
+      .where(
+        // poor man's IN
+        // drizzle doesn't have inArray for this tiny set? use or chain
+        // fallback: fetch all and filter (small)
+        // to keep simple, fetch per revision? do bulk via sql
+        // use db.execute raw
+        // simpler: fetch all for these revisionIds via inArray
+        // we imported correctly, use inArray
+        // but avoid import clutter, do manual filter
+        // just fetch all related via query
+        eq(knowledgeIngestions.documentRevisionId, revisions[0]!.id),
+      );
+    // fetch remaining via loop to avoid sql complexity
+    const allIngestions = await Promise.all(
+      revisions.map(async (r) =>
+        (await db.select().from(knowledgeIngestions).where(eq(knowledgeIngestions.documentRevisionId, r.id)))[0],
+      ),
+    );
+    for (const ing of allIngestions) {
+      if (ing) ingestionByRevision.set(ing.documentRevisionId, ing);
+    }
+    // also include first fetch (duplicate)
+    for (const ing of ingestions) ingestionByRevision.set(ing.documentRevisionId, ing);
+  }
+  return c.json({
+    revisions: revisions.map((r) => ({
+      id: r.id,
+      documentId: r.documentId,
+      revisionNumber: r.revisionNumber,
+      storageKey: r.storageKey,
+      filename: r.filename,
+      mime: r.mime,
+      sizeBytes: r.sizeBytes,
+      checksum: r.checksum,
+      hasExtracted: Boolean(r.extractedMarkdown),
+      createdBy: r.createdBy,
+      createdAt: r.createdAt.toISOString(),
+      supersededAt: r.supersededAt?.toISOString() ?? null,
+      ingestion: ingestionByRevision.get(r.id) ?? null,
+    })),
+    _debug: { documentId: id, title: (await db.select().from(knowledgeDocuments).where(eq(knowledgeDocuments.id, id)).then((x) => x[0]))?.title },
+  });
+});
+
+// ingestion status direto
+knowledgeRoutes.get("/ingestions/:id", async (c) => {
+  const user = c.get("user");
+  const ing = (
+    await db.select().from(knowledgeIngestions).where(eq(knowledgeIngestions.id, c.req.param("id")))
+  )[0];
+  if (!ing) throw notFound("Ingestão não encontrada.");
+  const rev = (
+    await db
+      .select()
+      .from(knowledgeDocumentRevisions)
+      .where(eq(knowledgeDocumentRevisions.id, ing.documentRevisionId))
+  )[0];
+  if (!rev) throw notFound("Revisão não encontrada.");
+  await guardDocumentRead(user, rev.documentId);
+  return c.json({ ingestion: ing, revision: rev });
 });
 
 // ---------- admin ----------
@@ -258,7 +347,6 @@ knowledgeRoutes.post("/:id/documents", async (c) => {
     .set({ updatedAt: new Date() })
     .where(eq(knowledgeCollections.id, id));
 
-  // RAG: indexa chunks em background (await para garantir consistência)
   await reindexDocument(row.id, collection.id, body.bodyMd);
 
   await writeAudit({
@@ -272,7 +360,7 @@ knowledgeRoutes.post("/:id/documents", async (c) => {
   return c.json(toDocument(row));
 });
 
-// upload txt/md/pdf -> extrai texto e cria document
+// R2: upload com storage + ingestão assíncrona
 knowledgeRoutes.post("/:id/upload", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
@@ -282,50 +370,254 @@ knowledgeRoutes.post("/:id/upload", async (c) => {
   if (!file || typeof file === "string") {
     throw forbidden("Envie um arquivo em 'file'.");
   }
-  // valida extensão
-  const lower = file.name.toLowerCase();
-  const allowed = lower.endsWith(".md") || lower.endsWith(".txt") || lower.endsWith(".pdf");
-  if (!allowed) {
-    throw forbidden("Formato não suportado. Use md, txt ou pdf.");
+  const filename = file.name || "upload.bin";
+  const mime = (file.type || "").trim() || "application/octet-stream";
+  const buf = Buffer.from(await file.arrayBuffer());
+  const sizeBytes = buf.byteLength;
+
+  // validação tamanho/MIME/ext
+  const v = validateUpload(filename, mime, sizeBytes);
+  if (!v.ok) {
+    throw forbidden(v.message);
   }
+  const fileChecksum = Bun.SHA256.hash(buf, "hex");
+
+  // dedup por checksum dentro da mesma coleção (alerta mas permite)
+  // cria documento + revisão
   const titleForm = form.get("title");
-  const { text, filename, mime } = await extractTextFromFile(file);
-  if (!text.trim()) throw forbidden("Arquivo vazio ou ilegível.");
   const title =
     (typeof titleForm === "string" && titleForm.trim()) ||
     filename.replace(/\.[^.]+$/, "") ||
     "Documento";
 
-  const [row] = await db
+  const [docRow] = await db
     .insert(knowledgeDocuments)
     .values({
       collectionId: collection.id,
       title,
-      bodyMd: text.slice(0, 500000),
-      sourceType: lower.endsWith(".pdf") ? "upload" : "markdown",
+      bodyMd: "", // será preenchido após extração
+      sourceType: filename.toLowerCase().endsWith(".pdf") ? "upload" : "markdown",
       filename,
       mime,
-      checksum: checksum(text),
+      checksum: fileChecksum,
       createdBy: user.id,
     })
     .returning();
-  if (!row) throw new Error("failed to create document from upload");
+  if (!docRow) throw new Error("failed to create document");
+
+  const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : "";
+  const revisionId = crypto.randomUUID();
+  const storageKey = buildStorageKey(docRow.id, revisionId, ext);
+
+  // armazena original em RustFS/local
+  await putObject(storageKey, buf, mime || "application/octet-stream");
+
+  const [rev] = await db
+    .insert(knowledgeDocumentRevisions)
+    .values({
+      id: revisionId,
+      documentId: docRow.id,
+      revisionNumber: 1,
+      storageKey,
+      filename,
+      mime: mime || mimeFromExtFallback(ext),
+      sizeBytes,
+      checksum: fileChecksum,
+      createdBy: user.id,
+    })
+    .returning();
+  if (!rev) throw new Error("failed to create revision");
+
+  const [ing] = await db
+    .insert(knowledgeIngestions)
+    .values({
+      documentRevisionId: rev.id,
+      status: "queued",
+      stage: "upload",
+    })
+    .returning();
 
   await db
     .update(knowledgeCollections)
     .set({ updatedAt: new Date() })
     .where(eq(knowledgeCollections.id, id));
-  await reindexDocument(row.id, collection.id, row.bodyMd);
 
   await writeAudit({
     actorId: user.id,
-    action: "knowledge.publish",
+    action: "knowledge.upload",
     entityType: "knowledge_document",
-    entityId: row.id,
-    meta: { collectionId: id, title, filename, upload: true },
+    entityId: docRow.id,
+    meta: { collectionId: id, title, filename, storageKey, checksum: fileChecksum, ingestionId: ing?.id },
   });
 
-  return c.json(toDocument(row));
+  // dispara worker assíncrono sem bloquear resposta
+  if (ing) enqueueIngestionAsync(ing.id);
+
+  return c.json({
+    document: toDocument({ ...docRow, bodyMd: "" } as DocumentRow),
+    revision: {
+      id: rev.id,
+      revisionNumber: rev.revisionNumber,
+      storageKey: rev.storageKey,
+      filename: rev.filename,
+      mime: rev.mime,
+      sizeBytes: rev.sizeBytes,
+      checksum: rev.checksum,
+    },
+    ingestion: ing
+      ? { id: ing.id, status: ing.status, stage: ing.stage }
+      : null,
+  });
+});
+
+// nova revisão para documento existente
+knowledgeRoutes.post("/documents/:id/revisions", async (c) => {
+  const user = c.get("user");
+  const docId = c.req.param("id");
+  await guardDocumentRead(user, docId);
+  const form = await c.req.formData();
+  const file = form.get("file") as File | null;
+  if (!file || typeof file === "string") throw forbidden("Envie um arquivo em 'file'.");
+  const filename = file.name || "upload.bin";
+  const mime = (file.type || "").trim() || "application/octet-stream";
+  const buf = Buffer.from(await file.arrayBuffer());
+  const sizeBytes = buf.byteLength;
+  const v = validateUpload(filename, mime, sizeBytes);
+  if (!v.ok) throw forbidden(v.message);
+  const fileChecksum = Bun.SHA256.hash(buf, "hex");
+
+  const maxRev = await db
+    .select()
+    .from(knowledgeDocumentRevisions)
+    .where(eq(knowledgeDocumentRevisions.documentId, docId))
+    .orderBy(desc(knowledgeDocumentRevisions.revisionNumber))
+    .limit(1)
+    .then((r) => r[0]?.revisionNumber ?? 0);
+  const nextRev = maxRev + 1;
+  const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : "";
+  const revisionId = crypto.randomUUID();
+  const storageKey = buildStorageKey(docId, revisionId, ext);
+  await putObject(storageKey, buf, mime || "application/octet-stream");
+
+  // marca anterior como superseded
+  if (maxRev > 0) {
+    const prev = (
+      await db
+        .select()
+        .from(knowledgeDocumentRevisions)
+        .where(
+          and(
+            eq(knowledgeDocumentRevisions.documentId, docId),
+            eq(knowledgeDocumentRevisions.revisionNumber, maxRev),
+          ),
+        )
+    )[0];
+    if (prev && !prev.supersededAt) {
+      await db
+        .update(knowledgeDocumentRevisions)
+        .set({ supersededAt: new Date() })
+        .where(eq(knowledgeDocumentRevisions.id, prev.id));
+    }
+  }
+
+  const [rev] = await db
+    .insert(knowledgeDocumentRevisions)
+    .values({
+      id: revisionId,
+      documentId: docId,
+      revisionNumber: nextRev,
+      storageKey,
+      filename,
+      mime: mime || mimeFromExtFallback(ext),
+      sizeBytes,
+      checksum: fileChecksum,
+      createdBy: user.id,
+    })
+    .returning();
+  if (!rev) throw new Error("failed to create revision");
+
+  const [ing] = await db
+    .insert(knowledgeIngestions)
+    .values({ documentRevisionId: rev.id, status: "queued", stage: "upload" })
+    .returning();
+
+  await writeAudit({
+    actorId: user.id,
+    action: "knowledge.revision_upload",
+    entityType: "knowledge_document",
+    entityId: docId,
+    meta: { revisionNumber: nextRev, filename, storageKey, ingestionId: ing?.id },
+  });
+
+  if (ing) enqueueIngestionAsync(ing.id);
+
+  return c.json({
+    revision: {
+      id: rev.id,
+      revisionNumber: rev.revisionNumber,
+      storageKey: rev.storageKey,
+      filename: rev.filename,
+      mime: rev.mime,
+      sizeBytes: rev.sizeBytes,
+      checksum: rev.checksum,
+    },
+    ingestion: ing ? { id: ing.id, status: ing.status, stage: ing.stage } : null,
+  });
+});
+
+// retry de ingestão falhada
+knowledgeRoutes.post("/ingestions/:id/retry", async (c) => {
+  const user = c.get("user");
+  const ing = (
+    await db.select().from(knowledgeIngestions).where(eq(knowledgeIngestions.id, c.req.param("id")))
+  )[0];
+  if (!ing) throw notFound("Ingestão não encontrada.");
+  const rev = (
+    await db
+      .select()
+      .from(knowledgeDocumentRevisions)
+      .where(eq(knowledgeDocumentRevisions.id, ing.documentRevisionId))
+  )[0];
+  if (!rev) throw notFound("Revisão não encontrada.");
+  await guardDocumentRead(user, rev.documentId);
+  if (ing.status !== "failed") throw forbidden("Só é possível retentar ingestões com falha.");
+
+  const [updated] = await db
+    .update(knowledgeIngestions)
+    .set({ status: "queued", stage: "upload", errorCode: null, errorMessage: null })
+    .where(eq(knowledgeIngestions.id, ing.id))
+    .returning();
+
+  await writeAudit({
+    actorId: user.id,
+    action: "knowledge.ingestion_retry",
+    entityType: "knowledge_ingestion",
+    entityId: ing.id,
+    meta: { revisionId: rev.id },
+  });
+
+  if (updated) enqueueIngestionAsync(updated.id);
+
+  return c.json({ ingestion: updated });
+});
+
+// processamento síncrono para teste/admin (processa queued ou uma específica)
+knowledgeRoutes.post("/ingestions/:id/process", async (c) => {
+  const user = c.get("user");
+  const ing = (
+    await db.select().from(knowledgeIngestions).where(eq(knowledgeIngestions.id, c.req.param("id")))
+  )[0];
+  if (!ing) throw notFound("Ingestão não encontrada.");
+  const rev = (
+    await db
+      .select()
+      .from(knowledgeDocumentRevisions)
+      .where(eq(knowledgeDocumentRevisions.id, ing.documentRevisionId))
+  )[0];
+  if (!rev) throw notFound("Revisão não encontrada.");
+  await guardDocumentRead(user, rev.documentId);
+  const result = await processIngestion(ing.id);
+  return c.json(result);
 });
 
 knowledgeRoutes.patch("/documents/:id", async (c) => {
@@ -450,3 +742,12 @@ knowledgeRoutes.patch("/:id", async (c) => {
 
   return c.json({ id: row.id, slug: row.slug });
 });
+
+function mimeFromExtFallback(ext: string): string {
+  const e = ext.toLowerCase();
+  if (e === ".pdf") return "application/pdf";
+  if (e === ".docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (e === ".txt" || e === ".csv") return "text/plain";
+  if (e === ".md") return "text/markdown";
+  return "application/octet-stream";
+}

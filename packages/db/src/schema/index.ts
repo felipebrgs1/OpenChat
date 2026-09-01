@@ -278,6 +278,72 @@ export const knowledgeDocuments = pgTable(
   (table) => [index("knowledge_document_collection_idx").on(table.collectionId)],
 );
 
+export const ingestionStatusEnum = pgEnum("ingestion_status", [
+  "queued",
+  "processing",
+  "ready",
+  "failed",
+]);
+
+export const ingestionStageEnum = pgEnum("ingestion_stage", [
+  "upload",
+  "validation",
+  "extraction",
+  "chunking",
+  "embedding",
+  "indexing",
+]);
+
+export const knowledgeDocumentRevisions = pgTable(
+  "knowledge_document_revision",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => knowledgeDocuments.id, { onDelete: "cascade" }),
+    revisionNumber: integer("revision_number").notNull(),
+    storageKey: text("storage_key").notNull(),
+    filename: text("filename").notNull(),
+    mime: text("mime").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    checksum: text("checksum").notNull(),
+    extractedMarkdown: text("extracted_markdown"),
+    extractionMetadata: jsonb("extraction_metadata").$type<Record<string, unknown>>(),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    supersededAt: timestamp("superseded_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("knowledge_revision_document_idx").on(table.documentId),
+    uniqueIndex("knowledge_revision_document_number_unique").on(
+      table.documentId,
+      table.revisionNumber,
+    ),
+  ],
+);
+
+export const knowledgeIngestions = pgTable(
+  "knowledge_ingestion",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentRevisionId: uuid("document_revision_id")
+      .notNull()
+      .references(() => knowledgeDocumentRevisions.id, { onDelete: "cascade" }),
+    status: ingestionStatusEnum("status").notNull().default("queued"),
+    stage: ingestionStageEnum("stage").notNull().default("upload"),
+    attempts: integer("attempts").notNull().default(0),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("knowledge_ingestion_revision_idx").on(table.documentRevisionId),
+    index("knowledge_ingestion_status_idx").on(table.status),
+  ],
+);
+
 export const auditLogs = pgTable("audit_log", {
   id: uuid("id").primaryKey().defaultRandom(),
   actorId: uuid("actor_id").references(() => users.id),
@@ -298,15 +364,25 @@ export const knowledgeChunks = pgTable(
     collectionId: uuid("collection_id")
       .notNull()
       .references(() => knowledgeCollections.id, { onDelete: "cascade" }),
+    revisionId: uuid("revision_id").references(() => knowledgeDocumentRevisions.id, {
+      onDelete: "set null",
+    }),
     chunkIndex: integer("chunk_index").notNull(),
     content: text("content").notNull(),
     embedding: vector("embedding", { dimensions: 1536 }),
+    // R2/R3: evolução para busca híbrida e rastreabilidade
+    page: integer("page"),
+    heading: text("heading"),
+    startOffset: integer("start_offset"),
+    endOffset: integer("end_offset"),
+    tokenCount: integer("token_count"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index("knowledge_chunk_document_idx").on(table.documentId),
     index("knowledge_chunk_collection_idx").on(table.collectionId),
+    index("knowledge_chunk_revision_idx").on(table.revisionId),
   ],
 );
 
