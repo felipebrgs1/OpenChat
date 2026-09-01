@@ -1,10 +1,11 @@
-import { beforeAll, describe, expect, it } from "bun:test";
+import { beforeAll, afterAll, describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 
 import { db, roles, usageEvents } from "@nexo/db";
 import { seed } from "@nexo/db/seed";
 
 import app from "./app";
+import { deleteTestUsers } from "./testing";
 
 const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL ?? "admin@nexo.local";
 const adminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD ?? "troque-esta-senha";
@@ -76,6 +77,11 @@ async function sendFirstMessage(token: string) {
 describe("lote 5 — governança e uso (e2e, sem dados sintéticos)", () => {
   beforeAll(async () => {
     await seed();
+  });
+
+  afterAll(async () => {
+    // usuários de teste em cascade apagam conversas/mensagens/usage/ledger
+    await deleteTestUsers();
   });
 
   it("usuário desativado não autentica (401)", async () => {

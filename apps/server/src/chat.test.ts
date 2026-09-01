@@ -1,13 +1,17 @@
-import { beforeAll, describe, expect, it } from "bun:test";
-import { eq } from "drizzle-orm";
+import { beforeAll, afterAll, describe, expect, it } from "bun:test";
+import { eq, inArray } from "drizzle-orm";
 
-import { db, roles } from "@nexo/db";
+import { conversations, db, roles } from "@nexo/db";
 import { seed } from "@nexo/db/seed";
 
 import app from "./app";
+import { deleteTestUsers } from "./testing";
 
 const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL ?? "admin@nexo.local";
 const adminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD ?? "troque-esta-senha";
+
+// conversas criadas com o token do admin durante os testes
+const adminConversationIds: string[] = [];
 
 async function request(
   path: string,
@@ -40,6 +44,13 @@ describe("lote 2 — chat", () => {
     await seed();
   });
 
+  afterAll(async () => {
+    if (adminConversationIds.length > 0) {
+      await db.delete(conversations).where(inArray(conversations.id, adminConversationIds));
+    }
+    await deleteTestUsers();
+  });
+
   it("rejeita modelo fora da allowlist", async () => {
     const token = await login(adminEmail, adminPassword);
     const created = await request("/api/conversations", {
@@ -60,6 +71,7 @@ describe("lote 2 — chat", () => {
     });
     expect(created.status).toBe(200);
     const conversationId = created.data.id as string;
+    adminConversationIds.push(conversationId);
 
     const suporte = (await db.select().from(roles).where(eq(roles.slug, "suporte")))[0];
     const email = `chatb+${Date.now()}@empresa.com`;
@@ -87,6 +99,7 @@ describe("lote 2 — chat", () => {
       body: {},
     });
     expect(created.status).toBe(200);
+    adminConversationIds.push(created.data.id as string);
     const previous = process.env.OPENROUTER_API_KEY;
     process.env.OPENROUTER_API_KEY = "";
     try {

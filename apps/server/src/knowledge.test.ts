@@ -1,10 +1,11 @@
-import { beforeAll, describe, expect, it } from "bun:test";
-import { eq } from "drizzle-orm";
+import { beforeAll, afterAll, describe, expect, it } from "bun:test";
+import { eq, like } from "drizzle-orm";
 
 import { db, knowledgeCollections, knowledgeRoles, roles } from "@nexo/db";
 import { seed } from "@nexo/db/seed";
 
 import app from "./app";
+import { deleteTestUsers } from "./testing";
 
 const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL ?? "admin@nexo.local";
 const adminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD ?? "troque-esta-senha";
@@ -54,6 +55,12 @@ async function createUserWithRole(roleSlug: string) {
 describe("lote 4 — knowledge por cargo", () => {
   beforeAll(async () => {
     await seed();
+  });
+
+  afterAll(async () => {
+    await deleteTestUsers();
+    // collections criadas pelo teste de CRUD admin
+    await db.delete(knowledgeCollections).where(like(knowledgeCollections.slug, "teste-%"));
   });
 
   it("doc vinculado só a cobranca não aparece para comercial", async () => {

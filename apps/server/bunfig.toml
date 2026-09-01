@@ -1,0 +1,3 @@
+# garante que `bun test` só rode testes de src/ (não os .test.js compilados em dist/)
+[test]
+root = "src"

@@ -1,9 +1,11 @@
-import { beforeAll, describe, expect, it } from "bun:test";
+import { beforeAll, afterAll, describe, expect, it } from "bun:test";
 
 import app from "./app";
 import { seed } from "@nexo/db/seed";
 import { db, roles, users } from "@nexo/db";
 import { eq } from "drizzle-orm";
+
+import { deleteTestUsers } from "./testing";
 
 const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL ?? "admin@nexo.local";
 const adminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD ?? "troque-esta-senha";
@@ -28,6 +30,10 @@ async function request(
 describe("lote 1 — identidade", () => {
   beforeAll(async () => {
     await seed();
+  });
+
+  afterAll(async () => {
+    await deleteTestUsers();
   });
 
   it("convite + login + me.role", async () => {
