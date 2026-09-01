@@ -1,9 +1,13 @@
 /**
- * Embeddings via OpenRouter — lote 6 RAG.
- * Modelo default: openai/text-embedding-3-small (1536 dims), barato e estável.
+ * R4 — Embeddings multilíngues para português.
+ * Default: openai/text-embedding-3-small (1536 dims) — multilíngue, barato e estável para pt-BR.
+ * Alternativas via EMBEDDING_MODEL (OpenRouter):
+ * - cohere/embed-multilingual-v3.0 (1024 dims, ótimo para pt-BR, requer reindex)
+ * - voyageai/voyage-multilingual-2 (1024 dims)
+ * - openai/text-embedding-3-large (3072 dims, melhor recall, requer migração)
  * Env: EMBEDDING_MODEL, OPENROUTER_API_KEY, OPENROUTER_HTTP_REFERER, OPENROUTER_APP_TITLE
  */
-export const EMBEDDING_DIMENSIONS = 1536;
+export const EMBEDDING_DIMENSIONS = Number(process.env.EMBEDDING_DIMENSIONS ?? 1536);
 export const DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small";
 
 export function embeddingModel(): string {

@@ -45,6 +45,8 @@ services:
       S3_REGION: us-east-1
       S3_FORCE_PATH_STYLE: "true"
       STORAGE_DIR: /data/storage
+      DOCLING_WORKER_URL: http://docling-worker:8001
+      OCR_ENABLED: ${OCR_ENABLED:-false}
     healthcheck:
       test:
         [
@@ -61,6 +63,27 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+
+  # R3 — Docling worker (Python) para extração estruturada PDF/DOCX/PPTX/XLSX/HTML.
+  # Opcional em dev (fallback local via pdf-parse/mammoth). Em produção, ligar com --profile docling.
+  docling-worker:
+    build:
+      context: ./workers/docling
+      dockerfile: Dockerfile
+    container_name: nexo-docling
+    ports:
+      - "8001:8001"
+    environment:
+      PORT: 8001
+      OCR_ENABLED: ${OCR_ENABLED:-false}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    profiles: ["docling"]
 
   # R2 — RustFS (S3 compatível). Em dev usamos MinIO, mesma API S3.
   # Produção: trocar imagem por rustfs/rustfs:latest com TLS e rede privada.

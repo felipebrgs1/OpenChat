@@ -29,6 +29,13 @@
       "when": 1788284479562,
       "tag": "0003_storage_ingestion",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788284479563,
+      "tag": "0004_rag_hybrid",
+      "breakpoints": true
     }
   ]
 }

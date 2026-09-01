@@ -7,7 +7,7 @@
  * R3 troca para Docling + OCR.
  */
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   db,
   knowledgeChunks,
@@ -17,20 +17,37 @@ import {
   knowledgeIngestions,
 } from "@nexo/db";
 
-import { chunkMarkdown } from "./chunk";
+import { chunkStructuredMarkdown } from "./chunk";
 import { embedTexts } from "./embeddings";
+import { extractWithDocling } from "./extraction";
 import { getObject } from "./storage";
 
-// limites R2
+// limites R2/R3 — Docling expande para pptx, xlsx, html
+// R2 aceitava só pdf/docx/txt/md; R3 aceita também pptx/xlsx/html
+// (validação MIME é permissiva — extensão é a fonte de verdade)
 export const MAX_FILE_BYTES = Number(process.env.MAX_UPLOAD_BYTES ?? 50 * 1024 * 1024); // 50 MB
 export const ALLOWED_MIMES = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "text/plain",
   "text/markdown",
+  "text/html",
   "text/csv",
 ]);
-export const ALLOWED_EXTS = new Set([".pdf", ".docx", ".txt", ".md", ".markdown", ".csv"]);
+export const ALLOWED_EXTS = new Set([
+  ".pdf",
+  ".docx",
+  ".pptx",
+  ".xlsx",
+  ".html",
+  ".htm",
+  ".txt",
+  ".md",
+  ".markdown",
+  ".csv",
+]);
 
 function extFromFilename(name: string): string {
   const dot = name.lastIndexOf(".");
@@ -68,57 +85,11 @@ function sha256Hex(data: Buffer): string {
   return Bun.SHA256.hash(data, "hex");
 }
 
+// R3: extração delegada para extraction.ts (Docling + fallback local)
+// mantida assinatura antiga para compat, mas usa extractWithDocling
 async function extractText(buffer: Buffer, filename: string, mime: string): Promise<{ markdown: string; metadata: Record<string, unknown> }> {
-  const ext = extFromFilename(filename);
-  const lower = filename.toLowerCase();
-  // txt/md/csv: utf8
-  if (ext === ".txt" || ext === ".md" || ext === ".markdown" || ext === ".csv") {
-    const text = buffer.toString("utf-8");
-    if (!text.trim()) throw Object.assign(new Error("Arquivo vazio ou ilegível."), { code: "EMPTY_EXTRACTION" });
-    return { markdown: text, metadata: { extractor: "utf8", ext } };
-  }
-  if (ext === ".pdf" || mime === "application/pdf" || lower.endsWith(".pdf")) {
-    try {
-      // @ts-ignore no types for pdf-parse
-      const mod: unknown = await import("pdf-parse").catch(() => null);
-      const pdfParse = (mod as { default?: (b: Buffer) => Promise<{ text: string; numpages?: number; info?: unknown }> })?.default;
-      if (pdfParse) {
-        const parsed = await pdfParse(buffer);
-        const text = (parsed.text ?? "").trim();
-        if (!text) {
-          throw Object.assign(new Error("PDF sem texto extraível — pode estar escaneado. R3 com OCR será necessário."), { code: "PDF_NO_TEXT" });
-        }
-        return {
-          markdown: text,
-          metadata: { extractor: "pdf-parse", pages: parsed.numpages ?? null },
-        };
-      }
-    } catch (e) {
-      if ((e as { code?: string })?.code === "PDF_NO_TEXT") throw e;
-      // fallback tenta utf8
-    }
-    const fallback = buffer.toString("utf-8").trim();
-    if (!fallback || fallback.length < 20 || /%PDF/.test(fallback.slice(0, 10))) {
-      throw Object.assign(new Error("PDF ilegível ou escaneado sem OCR."), { code: "PDF_UNREADABLE" });
-    }
-    return { markdown: fallback, metadata: { extractor: "utf8-fallback", ext } };
-  }
-  if (ext === ".docx") {
-    try {
-      const mod: unknown = await import("mammoth").catch(() => null);
-      const mammoth = mod as { extractRawText?: (o: { buffer: Buffer }) => Promise<{ value: string }> } | null;
-      if (mammoth?.extractRawText) {
-        const { value } = await mammoth.extractRawText({ buffer });
-        const text = value.trim();
-        if (!text) throw Object.assign(new Error("DOCX vazio ou sem texto."), { code: "DOCX_EMPTY" });
-        return { markdown: text, metadata: { extractor: "mammoth", ext } };
-      }
-    } catch (e) {
-      if ((e as { code?: string })?.code) throw e;
-    }
-    throw Object.assign(new Error("DOCX não pôde ser lido. Instale mammoth (bun add mammoth)."), { code: "DOCX_NO_EXTRACTOR" });
-  }
-  throw Object.assign(new Error(`Extração não suportada para ${ext}`), { code: "UNSUPPORTED_EXTRACTION" });
+  const res = await extractWithDocling(buffer, filename, mime);
+  return { markdown: res.markdown, metadata: res.metadata };
 }
 
 type ProcessResult = { status: "ready" | "failed"; errorCode?: string; errorMessage?: string };
@@ -171,50 +142,59 @@ export async function processIngestion(ingestionId: string): Promise<ProcessResu
 
     await db.update(knowledgeIngestions).set({ stage: "chunking" }).where(eq(knowledgeIngestions.id, ingestionId));
 
-    // --- chunking ---
-    const chunks = chunkMarkdown(markdown);
-    if (chunks.length === 0) {
+    // --- chunking (R3: por estrutura, não mistura seções) ---
+    const structured = chunkStructuredMarkdown(markdown);
+    if (structured.length === 0) {
       throw Object.assign(new Error("Documento vazio após extração."), { code: "EMPTY_CHUNKS", stage: "chunking" });
     }
-    // limpa chunks antigos apenas da revisão (mantém outras revisões)
+    // limpa chunks antigos apenas da revisão atual antes de reindexar (idempotência)
     await db.delete(knowledgeChunks).where(eq(knowledgeChunks.revisionId, revision.id));
-    // também limpa chunks sem revision do mesmo documento (legado) para evitar duplicidade se for primeira revisão
-    // não limpa todas as revisões — R3 tratará superseded
 
     await db.update(knowledgeIngestions).set({ stage: "embedding" }).where(eq(knowledgeIngestions.id, ingestionId));
 
     // --- embedding + indexing ---
     let embeddings: number[][] | null = null;
     try {
-      const res = await embedTexts(chunks);
+      const res = await embedTexts(structured.map((c) => c.content));
       embeddings = res.embeddings;
     } catch (e) {
-      // sem embeddings não deve falhar ingestão — salva sem embedding e marca como ready com aviso
       console.warn("ingestão: embeddings falhou, salvando sem embedding", e instanceof Error ? e.message : String(e));
     }
 
     await db.update(knowledgeIngestions).set({ stage: "indexing" }).where(eq(knowledgeIngestions.id, ingestionId));
 
-    // atualiza documento bodyMd para compatibilidade com RAG atual (será por revisão em R3+)
-    const firstPageHeading = metadata["heading"] as string | undefined;
+    // atualiza documento bodyMd para compatibilidade com RAG atual (por revisão a partir de R3, mas mantém bodyMd latest)
     await db
       .update(knowledgeDocuments)
-      .set({ bodyMd: markdown.slice(0, 500_000), checksum: revision.checksum, mime: revision.mime, filename: revision.filename, updatedAt: new Date() })
+      .set({
+        bodyMd: markdown.slice(0, 500_000),
+        checksum: revision.checksum,
+        mime: revision.mime,
+        filename: revision.filename,
+        updatedAt: new Date(),
+      })
       .where(eq(knowledgeDocuments.id, document.id));
 
-    // insere chunks
-    const rows = chunks.map((content, i) => ({
+    // R3: garante que só a revisão mais recente fique ativa — remove chunks de revisões superseded do mesmo documento
+    // deleta chunks de outras revisões deste documento (inclusive legacy sem revisionId)
+    // faz antes do insert da nova para evitar apagar o que acabamos de inserir (usamos != )
+    await db.execute(
+      sql`DELETE FROM knowledge_chunk WHERE document_id = ${document.id}::uuid AND (revision_id IS NULL OR revision_id != ${revision.id}::uuid)`,
+    );
+
+    // insere chunks da revisão atual com metadados estruturados (page/heading/offsets)
+    const rows = structured.map((c, i) => ({
       documentId: document.id,
       collectionId,
       revisionId: revision.id,
       chunkIndex: i,
-      content,
+      content: c.content,
       embedding: embeddings?.[i] ?? null,
-      page: null as number | null,
-      heading: (firstPageHeading as string) ?? null,
-      startOffset: null,
-      endOffset: null,
-      tokenCount: Math.ceil(content.length / 4),
+      page: c.page,
+      heading: c.heading,
+      startOffset: c.startOffset,
+      endOffset: c.endOffset,
+      tokenCount: c.tokenCount,
     }));
     for (let i = 0; i < rows.length; i += 64) {
       const batch = rows.slice(i, i + 64);

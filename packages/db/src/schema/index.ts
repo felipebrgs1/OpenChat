@@ -376,6 +376,9 @@ export const knowledgeChunks = pgTable(
     startOffset: integer("start_offset"),
     endOffset: integer("end_offset"),
     tokenCount: integer("token_count"),
+    // R4: vetor textual para busca híbrida (gerado via trigger tsvector)
+    // drizzle não tem tipo tsvector nativo, mapeamos como text para não quebrar, mas coluna real é tsvector
+    searchVector: text("search_vector"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
