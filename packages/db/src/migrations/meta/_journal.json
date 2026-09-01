@@ -64,6 +64,13 @@
       "when": 1788284479567,
       "tag": "0008_ops_r6",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788284479568,
+      "tag": "0009_document_visibility",
+      "breakpoints": true
     }
   ]
 }

@@ -281,6 +281,22 @@ export const knowledgeRoles = pgTable(
   ],
 );
 
+export const knowledgeDocumentRoles = pgTable(
+  "knowledge_document_role",
+  {
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => knowledgeDocuments.id, { onDelete: "cascade" }),
+    roleId: uuid("role_id")
+      .notNull()
+      .references(() => roles.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.documentId, table.roleId] }),
+    index("knowledge_document_role_role_id_idx").on(table.roleId),
+  ],
+);
+
 export const documentStatusEnum = pgEnum("document_status", ["draft", "published", "obsolete"]);
 
 export const knowledgeDocuments = pgTable(
@@ -299,6 +315,7 @@ export const knowledgeDocuments = pgTable(
     createdBy: uuid("created_by").references(() => users.id),
     ownerId: uuid("owner_id").references(() => users.id),
     status: documentStatusEnum("status").notNull().default("published"),
+    visibility: knowledgeVisibilityEnum("visibility").notNull().default("by_role"),
     reviewAt: timestamp("review_at", { withTimezone: true }),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -309,6 +326,7 @@ export const knowledgeDocuments = pgTable(
     index("knowledge_document_collection_idx").on(table.collectionId),
     index("knowledge_document_owner_idx").on(table.ownerId),
     index("knowledge_document_status_idx").on(table.status),
+    index("knowledge_document_visibility_idx").on(table.visibility),
     index("knowledge_document_review_idx").on(table.reviewAt),
   ],
 );

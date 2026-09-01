@@ -1,4 +1,4 @@
-import type { KnowledgeCollectionSummary } from "@nexo/contracts";
+import type { KnowledgeCollectionSummary, MeResponse } from "@nexo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 
@@ -13,6 +13,10 @@ function KnowledgePage() {
     queryKey: ["knowledge"],
     queryFn: () => api<{ collections: KnowledgeCollectionSummary[] }>("/api/knowledge"),
   });
+  const me = useQuery({
+    queryKey: ["me"],
+    queryFn: () => api<MeResponse>("/api/me"),
+  });
 
   const list = collections.data?.collections ?? [];
 
@@ -24,6 +28,18 @@ function KnowledgePage() {
           Documentos que o assistente consulta antes de responder.
         </p>
       </div>
+      {me.data?.user.isAdmin ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-900/30 dark:bg-amber-950/20">
+          Você é admin — criar e editar bases (com histórico) em{" "}
+          <Link to="/app/admin/knowledge" className="font-medium underline">
+            /app/admin/knowledge
+          </Link>{" "}
+          e documentos em{" "}
+          <Link to="/app/admin/documents" className="font-medium underline">
+            /app/admin/documents
+          </Link>
+        </div>
+      ) : null}
 
       {collections.isLoading ? <p className="text-sm text-muted-foreground">Carregando…</p> : null}
 

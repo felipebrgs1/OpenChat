@@ -1,4 +1,4 @@
-import type { KnowledgeCollectionDetail } from "@nexo/contracts";
+import type { KnowledgeCollectionDetail, MeResponse } from "@nexo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 
@@ -15,6 +15,7 @@ function CollectionPage() {
     queryKey: ["knowledge", collectionId],
     queryFn: () => api<KnowledgeCollectionDetail>(`/api/knowledge/${collectionId}`),
   });
+  const me = useQuery({ queryKey: ["me"], queryFn: () => api<MeResponse>("/api/me") });
 
   if (collection.isLoading) {
     return (
@@ -41,6 +42,14 @@ function CollectionPage() {
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">{collection.data.name}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{collection.data.description}</p>
       </div>
+      {me.data?.user.isAdmin ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-900/30 dark:bg-amber-950/20">
+          Você é admin — editar esta base (com histórico) em{" "}
+          <Link to="/app/admin/knowledge" className="font-medium underline">
+            /app/admin/knowledge
+          </Link>
+        </div>
+      ) : null}
 
       <div className="space-y-8">
         {collection.data.documents.map((doc) => (

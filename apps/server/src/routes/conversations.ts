@@ -239,10 +239,11 @@ conversationRoutes.post("/:id/messages", async (c) => {
     try {
       const r = await retrieveKnowledgeChunksWithTelemetry(content, user.roleId, 6, {
         isAdmin: user.isAdmin,
+        userId: user.id,
       });
       ragChunks = r.chunks;
       ragTelemetry = r.telemetry;
-      hasSources = hasSufficientEvidenceForQuery(content, ragChunks) && ragTelemetry.hasSufficientEvidence;
+      hasSources = hasSufficientEvidenceForQuery(content, ragChunks);
       if (hasSources && ragChunks.length > 0) {
         knowledgeBlock = buildRagKnowledgeBlock(ragChunks);
         ragSources = toRagSources(ragChunks);

@@ -5,14 +5,17 @@ import {
   patchKnowledgeDocumentBodySchema,
 } from "@nexo/contracts";
 import {
+  auditLogs,
   db,
   knowledgeChunks,
   knowledgeCollections,
   knowledgeDocumentRevisions,
+  knowledgeDocumentRoles,
   knowledgeDocuments,
   knowledgeFeedback,
   knowledgeIngestions,
   knowledgeRoles,
+  users,
 } from "@nexo/db";
 import { and, desc, eq, isNull, lte, sql } from "drizzle-orm";
 import { Hono } from "hono";
@@ -48,6 +51,7 @@ function toDocument(row: DocumentRow) {
     bodyMd: row.bodyMd,
     ownerId: (row as unknown as { ownerId: string | null }).ownerId ?? null,
     status: (row as unknown as { status: string }).status ?? "published",
+    visibility: (row as unknown as { visibility: string }).visibility ?? "by_role",
     reviewAt: (row as unknown as { reviewAt: Date | null }).reviewAt?.toISOString() ?? null,
     publishedAt: (row as unknown as { publishedAt: Date | null }).publishedAt?.toISOString() ?? null,
     checksum: row.checksum,
@@ -105,8 +109,22 @@ async function guardDocumentRead(user: AuthUser, documentId: string) {
     await db.select().from(knowledgeDocuments).where(eq(knowledgeDocuments.id, documentId))
   )[0];
   if (!doc || doc.deletedAt) throw notFound("Documento não encontrado.");
+  if (user.isAdmin) return doc;
+  if ((doc as unknown as { ownerId: string | null }).ownerId === user.id) return doc;
   await guardCollectionRead(user, doc.collectionId);
   return doc;
+}
+
+// R6 painel: gestão do documento (owner+admin) — por default só admin e dono têm acesso direto ao painel/edição
+async function guardDocumentManage(user: AuthUser, documentId: string) {
+  const doc = (
+    await db.select().from(knowledgeDocuments).where(eq(knowledgeDocuments.id, documentId))
+  )[0];
+  if (!doc || doc.deletedAt) throw notFound("Documento não encontrado.");
+  if (user.isAdmin) return doc;
+  if ((doc as unknown as { ownerId: string | null }).ownerId === user.id) return doc;
+  // não é admin nem dono -> nega por default (mesmo que tenha acesso à coleção, o painel é restrito)
+  throw forbidden("Apenas admin ou dono do documento.");
 }
 
 async function reindexDocument(documentId: string, collectionId: string, bodyMd: string) {
@@ -204,11 +222,11 @@ knowledgeRoutes.get("/revisions/:revisionId/download", async (c) => {
   });
 });
 
-// lista revisões + ingestões de um documento
+// lista revisões + ingestões — painel restrito a dono+admin (R6)
 knowledgeRoutes.get("/documents/:id/revisions", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
-  await guardDocumentRead(user, id);
+  await guardDocumentManage(user, id);
   const revisions = await db
     .select()
     .from(knowledgeDocumentRevisions)
@@ -281,58 +299,160 @@ knowledgeRoutes.get("/ingestions/:id", async (c) => {
   return c.json({ ingestion: ing, revision: rev });
 });
 
-// ---------- admin ----------
-
-knowledgeRoutes.use("*", requireAdmin);
-
-knowledgeRoutes.post("/", async (c) => {
+// R6 — rotas de gestão de documento (owner+admin) — por default só dono+admin têm acesso direto ao painel/edição
+// Estas rotas ficam ANTES do requireAdmin para permitir dono não-admin
+knowledgeRoutes.post("/documents/:id/revisions", async (c) => {
   const user = c.get("user");
-  const body = await parseBody(createKnowledgeCollectionBodySchema, await c.req.json());
-
-  const existing = (
-    await db.select().from(knowledgeCollections).where(eq(knowledgeCollections.slug, body.slug))
-  )[0];
-  if (existing && !existing.deletedAt) {
-    throw forbidden("Já existe uma base com esse slug.");
+  const docId = c.req.param("id");
+  await guardDocumentManage(user, docId);
+  const form = await c.req.formData();
+  const file = form.get("file") as File | null;
+  if (!file || typeof file === "string") throw forbidden("Envie um arquivo em 'file'.");
+  const filename = file.name || "upload.bin";
+  const mime = (file.type || "").trim() || "application/octet-stream";
+  const buf = Buffer.from(await file.arrayBuffer());
+  const sizeBytes = buf.byteLength;
+  const v = validateUpload(filename, mime, sizeBytes);
+  if (!v.ok) throw forbidden(v.message);
+  const fileChecksum = Bun.SHA256.hash(buf, "hex");
+  const maxRev = await db.select().from(knowledgeDocumentRevisions).where(eq(knowledgeDocumentRevisions.documentId, docId)).orderBy(desc(knowledgeDocumentRevisions.revisionNumber)).limit(1).then(r=>r[0]?.revisionNumber ?? 0);
+  const latestRevForDedup = (await db.select().from(knowledgeDocumentRevisions).where(eq(knowledgeDocumentRevisions.documentId, docId)).orderBy(desc(knowledgeDocumentRevisions.revisionNumber)).limit(1))[0];
+  if (latestRevForDedup && latestRevForDedup.checksum === fileChecksum) return c.json({ error: { code: "CONFLICT", message: "Mesma versão já existe." }, existingRevisionId: latestRevForDedup.id }, 409);
+  const nextRev = maxRev + 1;
+  const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : "";
+  const revisionId = crypto.randomUUID();
+  const storageKey = buildStorageKey(docId, revisionId, ext);
+  await putObject(storageKey, buf, mime || "application/octet-stream");
+  if (maxRev > 0) {
+    const prev = (await db.select().from(knowledgeDocumentRevisions).where(and(eq(knowledgeDocumentRevisions.documentId, docId), eq(knowledgeDocumentRevisions.revisionNumber, maxRev))))[0];
+    if (prev && !prev.supersededAt) await db.update(knowledgeDocumentRevisions).set({ supersededAt: new Date() }).where(eq(knowledgeDocumentRevisions.id, prev.id));
   }
-
-  const [row] = await db
-    .insert(knowledgeCollections)
-    .values({
-      slug: body.slug,
-      name: body.name,
-      description: body.description ?? "",
-      visibility: body.visibility ?? "by_role",
-      createdBy: user.id,
-    })
-    .returning();
-  if (!row) {
-    throw new Error("failed to create collection");
-  }
-
-  if (body.roleIds?.length) {
-    await db
-      .insert(knowledgeRoles)
-      .values(body.roleIds.map((roleId) => ({ collectionId: row.id, roleId })));
-  }
-
-  await writeAudit({
-    actorId: user.id,
-    action: "knowledge.create",
-    entityType: "knowledge_collection",
-    entityId: row.id,
-    meta: { slug: row.slug },
-  });
-
-  return c.json({ id: row.id, slug: row.slug });
+  const [rev] = await db.insert(knowledgeDocumentRevisions).values({ id: revisionId, documentId: docId, revisionNumber: nextRev, storageKey, filename, mime: mime || mimeFromExtFallback(ext), sizeBytes, checksum: fileChecksum, createdBy: user.id }).returning();
+  if (!rev) throw new Error("failed to create revision");
+  const [ing] = await db.insert(knowledgeIngestions).values({ documentRevisionId: rev.id, status: "queued", stage: "upload" }).returning();
+  await writeAudit({ actorId: user.id, action: "knowledge.revision_upload", entityType: "knowledge_document", entityId: docId, meta: { revisionNumber: nextRev, filename, storageKey, ingestionId: ing?.id } });
+  if (ing) enqueueIngestionAsync(ing.id);
+  return c.json({ revision: { id: rev.id, revisionNumber: rev.revisionNumber, storageKey: rev.storageKey, filename: rev.filename, mime: rev.mime, sizeBytes: rev.sizeBytes, checksum: rev.checksum }, ingestion: ing ? { id: ing.id, status: ing.status, stage: ing.stage } : null });
 });
 
+knowledgeRoutes.patch("/documents/:id", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  await guardDocumentManage(user, id);
+  const raw = await c.req.json();
+  let body: { title?: string; bodyMd?: string } = {};
+  try {
+    body = await parseBody(patchKnowledgeDocumentBodySchema, raw);
+  } catch (e) {
+    const extraCheck = raw as { ownerId?: string; status?: string; reviewAt?: string | null; visibility?: string; roleIds?: string[] };
+    const hasR6Only = extraCheck.ownerId !== undefined || extraCheck.status !== undefined || extraCheck.reviewAt !== undefined || extraCheck.visibility !== undefined || extraCheck.roleIds !== undefined;
+    if (!hasR6Only) throw e;
+    body = {};
+  }
+  const current = (await db.select().from(knowledgeDocuments).where(eq(knowledgeDocuments.id, id)))[0];
+  if (!current || current.deletedAt) throw notFound("Documento não encontrado.");
+  const extra = raw as { ownerId?: string; status?: string; reviewAt?: string | null; visibility?: string; roleIds?: string[] };
+  const patch: Record<string, unknown> = { title: body.title ?? current.title, bodyMd: body.bodyMd ?? current.bodyMd, checksum: checksum(body.bodyMd ?? current.bodyMd), updatedAt: new Date() };
+  if (extra.ownerId !== undefined) { if (extra.ownerId === null) patch.ownerId = null; else if (typeof extra.ownerId === "string" && extra.ownerId.trim()) { if (!user.isAdmin) throw forbidden("Só admin pode transferir dono."); patch.ownerId = extra.ownerId.trim(); } }
+  if (extra.status !== undefined && ["draft","published","obsolete"].includes(extra.status)) { patch.status = extra.status; if (extra.status === "published" && !current.publishedAt) patch.publishedAt = new Date(); }
+  if (extra.reviewAt !== undefined) { if (extra.reviewAt === null) patch.reviewAt = null; else { const d = new Date(extra.reviewAt); if (!Number.isNaN(d.getTime())) patch.reviewAt = d; } }
+  const [row] = await db.update(knowledgeDocuments).set(patch as never).where(eq(knowledgeDocuments.id, id)).returning();
+  if (!row) throw notFound("Documento não encontrado.");
+  await db.update(knowledgeCollections).set({ updatedAt: new Date() }).where(eq(knowledgeCollections.id, row.collectionId));
+  if (body.bodyMd !== undefined) await reindexDocument(row.id, row.collectionId, row.bodyMd);
+  await writeAudit({ actorId: user.id, action: "knowledge.document_update", entityType: "knowledge_document", entityId: id, meta: { collectionId: row.collectionId } });
+  return c.json(toDocument(row));
+});
+
+knowledgeRoutes.delete("/documents/:id", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  await guardDocumentManage(user, id);
+  const current = (await db.select().from(knowledgeDocuments).where(eq(knowledgeDocuments.id, id)))[0];
+  if (!current || current.deletedAt) throw notFound("Documento não encontrado.");
+  await db.update(knowledgeDocuments).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(knowledgeDocuments.id, id));
+  await db.delete(knowledgeChunks).where(eq(knowledgeChunks.documentId, id));
+  await db.update(knowledgeCollections).set({ updatedAt: new Date() }).where(eq(knowledgeCollections.id, current.collectionId));
+  await writeAudit({ actorId: user.id, action: "knowledge.document_delete", entityType: "knowledge_document", entityId: id, meta: { collectionId: current.collectionId } });
+  return c.json({ ok: true });
+});
+
+knowledgeRoutes.post("/documents/:id/rollback", async (c) => {
+  const user = c.get("user");
+  const docId = c.req.param("id");
+  const body = await c.req.json().catch(() => ({})) as { revisionId?: string };
+  const revisionId = body.revisionId?.trim();
+  if (!revisionId) throw forbidden("Informe revisionId.");
+  await guardDocumentManage(user, docId);
+  const target = (await db.select().from(knowledgeDocumentRevisions).where(eq(knowledgeDocumentRevisions.id, revisionId)))[0];
+  if (!target || target.documentId !== docId) throw notFound("Revisão não encontrada para este documento.");
+  const maxRev = await db.select().from(knowledgeDocumentRevisions).where(eq(knowledgeDocumentRevisions.documentId, docId)).orderBy(desc(knowledgeDocumentRevisions.revisionNumber)).limit(1).then(r=>r[0]?.revisionNumber ?? 0);
+  const nextRev = maxRev + 1;
+  const newId = crypto.randomUUID();
+  const buf = await getObject(target.storageKey);
+  const newKey = buildStorageKey(docId, newId, target.filename.includes(".") ? target.filename.slice(target.filename.lastIndexOf(".")) : "");
+  await putObject(newKey, buf, target.mime);
+  const [newRev] = await db.insert(knowledgeDocumentRevisions).values({ id: newId, documentId: docId, revisionNumber: nextRev, storageKey: newKey, filename: target.filename, mime: target.mime, sizeBytes: target.sizeBytes, checksum: target.checksum, extractedMarkdown: target.extractedMarkdown, extractionMetadata: { ...(target.extractionMetadata as Record<string, unknown> ?? {}), rollbackFrom: target.id }, createdBy: user.id }).returning();
+  if (!newRev) throw new Error("failed to create rollback revision");
+  await db.execute(sql`UPDATE knowledge_document_revision SET superseded_at = now() WHERE document_id = ${docId}::uuid AND id != ${newId}::uuid AND superseded_at IS NULL`);
+  const [ing] = await db.insert(knowledgeIngestions).values({ documentRevisionId: newRev.id, status: "queued" }).returning();
+  if (ing) enqueueIngestionAsync(ing.id);
+  if (target.extractedMarkdown) await db.update(knowledgeDocuments).set({ bodyMd: target.extractedMarkdown.slice(0,500000), checksum: target.checksum, updatedAt: new Date() }).where(eq(knowledgeDocuments.id, docId));
+  await writeAudit({ actorId: user.id, action: "knowledge.rollback", entityType: "knowledge_document", entityId: docId, meta: { from: target.id, to: newId, nextRev } });
+  return c.json({ revision: newRev, ingestion: ing });
+});
+
+knowledgeRoutes.get("/documents/:id/revisions", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  await guardDocumentManage(user, id);
+  const revisions = await db.select().from(knowledgeDocumentRevisions).where(eq(knowledgeDocumentRevisions.documentId, id)).orderBy(desc(knowledgeDocumentRevisions.revisionNumber));
+  const ingestionByRevision = new Map<string, typeof knowledgeIngestions.$inferSelect>();
+  const allIngestions = await Promise.all(revisions.map(async (r) => (await db.select().from(knowledgeIngestions).where(eq(knowledgeIngestions.documentRevisionId, r.id)))[0]));
+  for (const ing of allIngestions) if (ing) ingestionByRevision.set(ing.documentRevisionId, ing);
+  return c.json({ revisions: revisions.map((r) => ({ id: r.id, documentId: r.documentId, revisionNumber: r.revisionNumber, storageKey: r.storageKey, filename: r.filename, mime: r.mime, sizeBytes: r.sizeBytes, checksum: r.checksum, hasExtracted: Boolean(r.extractedMarkdown), createdBy: r.createdBy, createdAt: r.createdAt.toISOString(), supersededAt: r.supersededAt?.toISOString() ?? null, ingestion: ingestionByRevision.get(r.id) ?? null })), _debug: { documentId: id, title: (await db.select().from(knowledgeDocuments).where(eq(knowledgeDocuments.id, id)).then(x=>x[0]))?.title } });
+});
+
+// R6 — painel do usuário: lista apenas documentos onde é dono (por default só dono+admin têm acesso ao painel)
+knowledgeRoutes.get("/panel/my", async (c) => {
+  const user = c.get("user");
+  const docs = await db
+    .select()
+    .from(knowledgeDocuments)
+    .where(and(eq(knowledgeDocuments.ownerId, user.id), isNull(knowledgeDocuments.deletedAt)))
+    .orderBy(desc(knowledgeDocuments.updatedAt));
+  const docIds = docs.map((d) => d.id);
+  const revisions = docIds.length
+    ? await db.select().from(knowledgeDocumentRevisions).where(sql`${knowledgeDocumentRevisions.documentId} IN (${sql.join(docIds.map((id) => sql`${id}::uuid`), sql`, `)})`)
+    : [];
+  const revCount = new Map<string, number>();
+  for (const r of revisions) revCount.set(r.documentId, (revCount.get(r.documentId) ?? 0) + 1);
+  const docRoles = docIds.length ? await db.select().from(knowledgeDocumentRoles).where(sql`${knowledgeDocumentRoles.documentId} IN (${sql.join(docIds.map((id) => sql`${id}::uuid`), sql`, `)})`) : [];
+  const roleMap = new Map<string, string[]>();
+  for (const dr of docRoles) { const arr = roleMap.get(dr.documentId) ?? []; arr.push(dr.roleId); roleMap.set(dr.documentId, arr); }
+  const now = new Date();
+  return c.json({
+    documents: docs.map((d) => ({
+      ...toDocument(d),
+      roleIds: roleMap.get(d.id) ?? [],
+      revisionCount: revCount.get(d.id) ?? 0,
+      overdue: !!(d as unknown as { reviewAt: Date | null }).reviewAt && (d as unknown as { reviewAt: Date }).reviewAt < now,
+    })),
+  });
+});
+
+// R6 — criação de documento (qualquer usuário com acesso à coleção; dono = me) 
 knowledgeRoutes.post("/:id/documents", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
   const collection = await guardCollectionRead(user, id);
-  const body = await parseBody(createKnowledgeDocumentBodySchema, await c.req.json());
+  const raw = await c.req.json();
+  const body = await parseBody(createKnowledgeDocumentBodySchema, raw);
   const docChecksum = checksum(body.bodyMd);
+  const docVisibility = (raw as { visibility?: string }).visibility === "all" ? "all" : "by_role";
+  const docRoleIds = Array.isArray((raw as { roleIds?: string[] }).roleIds) ? (raw as { roleIds: string[] }).roleIds.filter((v) => typeof v === "string") : [];
+  const docOwnerIdRaw = (raw as { ownerId?: string }).ownerId;
+  const docOwnerId = typeof docOwnerIdRaw === "string" && docOwnerIdRaw.trim() && user.isAdmin ? docOwnerIdRaw.trim() : user.id;
   // R6: dedup por checksum na mesma coleção
   const dup = (
     await db
@@ -353,12 +473,17 @@ knowledgeRoutes.post("/:id/documents", async (c) => {
       sourceType: "markdown",
       checksum: docChecksum,
       createdBy: user.id,
-      ownerId: user.id,
+      ownerId: docOwnerId,
       status: "published",
+      visibility: docVisibility as never,
       reviewAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
       publishedAt: new Date(),
     })
     .returning();
+  if (row && docVisibility === "by_role" && docRoleIds.length) {
+    await db.insert(knowledgeDocumentRoles).values(docRoleIds.map((roleId) => ({ documentId: row.id, roleId })));
+  }
+  if (!row) throw new Error("failed to create document");
   if (!row) {
     throw new Error("failed to create document");
   }
@@ -381,7 +506,6 @@ knowledgeRoutes.post("/:id/documents", async (c) => {
   return c.json(toDocument(row));
 });
 
-// R2: upload com storage + ingestão assíncrona
 knowledgeRoutes.post("/:id/upload", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
@@ -414,13 +538,20 @@ knowledgeRoutes.post("/:id/upload", async (c) => {
     return c.json({ error: { code: "CONFLICT", message: "Arquivo com mesmo conteúdo já existe." }, existingId: dupUpload.id }, 409);
   }
 
-  // R6: owner/status/reviewAt via form (opcional)
+  // R6: owner/status/reviewAt/visibility via form (opcional)
   const ownerIdForm = form.get("ownerId");
   const statusForm = form.get("status");
   const reviewAtForm = form.get("reviewAt");
+  const visibilityForm = form.get("visibility");
+  const roleIdsForm = form.get("roleIds");
   const ownerId = typeof ownerIdForm === "string" && ownerIdForm.trim() ? ownerIdForm.trim() : user.id;
   const status = typeof statusForm === "string" && ["draft", "published", "obsolete"].includes(statusForm) ? (statusForm as "draft" | "published" | "obsolete") : "published";
   const reviewAt = typeof reviewAtForm === "string" && reviewAtForm.trim() ? new Date(reviewAtForm.trim()) : new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+  const visibility = typeof visibilityForm === "string" && ["all", "by_role"].includes(visibilityForm) ? visibilityForm as "all" | "by_role" : "by_role";
+  let uploadRoleIds: string[] = [];
+  if (typeof roleIdsForm === "string" && roleIdsForm.trim()) {
+    try { const parsed = JSON.parse(roleIdsForm as string); if (Array.isArray(parsed)) uploadRoleIds = parsed.filter((v) => typeof v === "string"); } catch { uploadRoleIds = (roleIdsForm as string).split(",").map((s) => s.trim()).filter(Boolean); }
+  }
 
   const titleForm = form.get("title");
   const title =
@@ -441,10 +572,14 @@ knowledgeRoutes.post("/:id/upload", async (c) => {
       createdBy: user.id,
       ownerId,
       status,
+      visibility: visibility as never,
       reviewAt: Number.isNaN(reviewAt.getTime()) ? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) : reviewAt,
       publishedAt: status === "published" ? new Date() : null,
     })
     .returning();
+  if (docRow && visibility === "by_role" && uploadRoleIds.length) {
+    await db.insert(knowledgeDocumentRoles).values(uploadRoleIds.map((roleId) => ({ documentId: docRow.id, roleId })));
+  }
   if (!docRow) throw new Error("failed to create document");
 
   const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : "";
@@ -512,11 +647,103 @@ knowledgeRoutes.post("/:id/upload", async (c) => {
   });
 });
 
+// ---------- admin ----------
+
+knowledgeRoutes.use("*", requireAdmin);
+
+knowledgeRoutes.get("/:id/history", async (c) => {
+  const id = c.req.param("id");
+  const collection = (await db.select().from(knowledgeCollections).where(eq(knowledgeCollections.id, id)))[0];
+  if (!collection || collection.deletedAt) throw notFound("Base não encontrada.");
+  const logs = await db.select().from(auditLogs).where(and(eq(auditLogs.entityType, "knowledge_collection"), eq(auditLogs.entityId, id))).orderBy(desc(auditLogs.createdAt)).limit(50);
+  const docLogs = await db.select().from(auditLogs).where(and(eq(auditLogs.entityType, "knowledge_document"), sql`${auditLogs.meta}->>'collectionId' = ${id}`)).orderBy(desc(auditLogs.createdAt)).limit(50);
+  return c.json({ history: [...logs, ...docLogs].sort((a,b)=> new Date(b.createdAt as unknown as string).getTime() - new Date(a.createdAt as unknown as string).getTime()).slice(0,50) });
+});
+
+knowledgeRoutes.get("/panel/all", async (c) => {
+  const docs = await db
+    .select({
+      doc: knowledgeDocuments,
+      ownerName: users.name,
+      ownerEmail: users.email,
+      collectionName: knowledgeCollections.name,
+      collectionSlug: knowledgeCollections.slug,
+    })
+    .from(knowledgeDocuments)
+    .leftJoin(users, eq(users.id, knowledgeDocuments.ownerId))
+    .leftJoin(knowledgeCollections, eq(knowledgeCollections.id, knowledgeDocuments.collectionId))
+    .where(isNull(knowledgeDocuments.deletedAt))
+    .orderBy(desc(knowledgeDocuments.updatedAt));
+  const docIdsAll = docs.map(({ doc }) => doc.id);
+  const docRolesAll = docIdsAll.length ? await db.select().from(knowledgeDocumentRoles).where(sql`${knowledgeDocumentRoles.documentId} IN (${sql.join(docIdsAll.map((id) => sql`${id}::uuid`), sql`, `)})`) : [];
+  const roleMapAll = new Map<string, string[]>();
+  for (const dr of docRolesAll) { const arr = roleMapAll.get(dr.documentId) ?? []; arr.push(dr.roleId); roleMapAll.set(dr.documentId, arr); }
+  const now = new Date();
+  return c.json({
+    documents: docs.map(({ doc, ownerName, ownerEmail, collectionName, collectionSlug }) => ({
+      ...toDocument(doc),
+      ownerName: ownerName ?? null,
+      ownerEmail: ownerEmail ?? null,
+      collectionName: collectionName ?? null,
+      collectionSlug: collectionSlug ?? null,
+      roleIds: roleMapAll.get(doc.id) ?? [],
+      overdue: !!(doc as unknown as { reviewAt: Date | null }).reviewAt && (doc as unknown as { reviewAt: Date }).reviewAt < now,
+    })),
+  });
+});
+
+knowledgeRoutes.post("/", async (c) => {
+  const user = c.get("user");
+  const body = await parseBody(createKnowledgeCollectionBodySchema, await c.req.json());
+
+  const existing = (
+    await db.select().from(knowledgeCollections).where(eq(knowledgeCollections.slug, body.slug))
+  )[0];
+  if (existing && !existing.deletedAt) {
+    throw forbidden("Já existe uma base com esse slug.");
+  }
+
+  const [row] = await db
+    .insert(knowledgeCollections)
+    .values({
+      slug: body.slug,
+      name: body.name,
+      description: body.description ?? "",
+      visibility: body.visibility ?? "by_role",
+      createdBy: user.id,
+    })
+    .returning();
+  if (!row) {
+    throw new Error("failed to create collection");
+  }
+
+  if (body.roleIds?.length) {
+    await db
+      .insert(knowledgeRoles)
+      .values(body.roleIds.map((roleId) => ({ collectionId: row.id, roleId })));
+  }
+
+  await writeAudit({
+    actorId: user.id,
+    action: "knowledge.create",
+    entityType: "knowledge_collection",
+    entityId: row.id,
+    meta: { slug: row.slug },
+  });
+
+  return c.json({ id: row.id, slug: row.slug });
+});
+
+
+
+// R2: upload com storage + ingestão assíncrona
+
+
 // nova revisão para documento existente
 knowledgeRoutes.post("/documents/:id/revisions", async (c) => {
   const user = c.get("user");
   const docId = c.req.param("id");
-  await guardDocumentRead(user, docId);
+  await guardDocumentManage(user, docId);
   const form = await c.req.formData();
   const file = form.get("file") as File | null;
   if (!file || typeof file === "string") throw forbidden("Envie um arquivo em 'file'.");
@@ -678,8 +905,17 @@ knowledgeRoutes.post("/ingestions/:id/process", async (c) => {
 knowledgeRoutes.patch("/documents/:id", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
+  await guardDocumentManage(user, id);
   const raw = await c.req.json();
-  const body = await parseBody(patchKnowledgeDocumentBodySchema, raw);
+  let body: { title?: string; bodyMd?: string } = {};
+  try {
+    body = await parseBody(patchKnowledgeDocumentBodySchema, raw);
+  } catch (e) {
+    const extraCheck = raw as { ownerId?: string; status?: string; reviewAt?: string | null; visibility?: string; roleIds?: string[] };
+    const hasR6Only = extraCheck.ownerId !== undefined || extraCheck.status !== undefined || extraCheck.reviewAt !== undefined || extraCheck.visibility !== undefined || extraCheck.roleIds !== undefined;
+    if (!hasR6Only) throw e;
+    body = {};
+  }
   const current = (
     await db.select().from(knowledgeDocuments).where(eq(knowledgeDocuments.id, id))
   )[0];
@@ -687,7 +923,7 @@ knowledgeRoutes.patch("/documents/:id", async (c) => {
     throw notFound("Documento não encontrado.");
   }
   // R6: owner/status/reviewAt
-  const extra = raw as { ownerId?: string; status?: string; reviewAt?: string | null };
+  const extra = raw as { ownerId?: string; status?: string; reviewAt?: string | null; visibility?: string; roleIds?: string[] };
   const patch: Record<string, unknown> = {
     title: body.title ?? current.title,
     bodyMd: body.bodyMd ?? current.bodyMd,
@@ -701,6 +937,9 @@ knowledgeRoutes.patch("/documents/:id", async (c) => {
   if (extra.status !== undefined && ["draft", "published", "obsolete"].includes(extra.status)) {
     patch.status = extra.status;
     if (extra.status === "published" && !current.publishedAt) patch.publishedAt = new Date();
+  }
+  if (extra.visibility !== undefined && ["all", "by_role"].includes(extra.visibility)) {
+    patch.visibility = extra.visibility;
   }
   if (extra.reviewAt !== undefined) {
     if (extra.reviewAt === null) patch.reviewAt = null;
@@ -717,6 +956,30 @@ knowledgeRoutes.patch("/documents/:id", async (c) => {
     .returning();
   if (!row) {
     throw notFound("Documento não encontrado.");
+  }
+
+  // R6: atualiza visibilidade por documento (domínio publico vs cargo)
+  if (extra.visibility !== undefined || extra.roleIds !== undefined) {
+    const vis = (extra.visibility as string) ?? (row as unknown as { visibility: string }).visibility;
+    if (vis === "all") {
+      await db.delete(knowledgeDocumentRoles).where(eq(knowledgeDocumentRoles.documentId, id));
+    } else if (Array.isArray(extra.roleIds)) {
+      await db.delete(knowledgeDocumentRoles).where(eq(knowledgeDocumentRoles.documentId, id));
+      const filtered = extra.roleIds.filter((v) => typeof v === "string" && v.trim());
+      if (filtered.length) await db.insert(knowledgeDocumentRoles).values(filtered.map((roleId) => ({ documentId: id, roleId })));
+    }
+  }
+
+  // R6: atualiza visibilidade por documento (domínio publico vs cargo)
+  if (extra.visibility !== undefined || extra.roleIds !== undefined) {
+    const vis = (extra.visibility as string) ?? (row as unknown as { visibility: string }).visibility;
+    if (vis === "all") {
+      await db.delete(knowledgeDocumentRoles).where(eq(knowledgeDocumentRoles.documentId, id));
+    } else if (Array.isArray(extra.roleIds)) {
+      await db.delete(knowledgeDocumentRoles).where(eq(knowledgeDocumentRoles.documentId, id));
+      const filtered = extra.roleIds.filter((v) => typeof v === "string" && v.trim());
+      if (filtered.length) await db.insert(knowledgeDocumentRoles).values(filtered.map((roleId) => ({ documentId: id, roleId })));
+    }
   }
 
   await db
@@ -742,6 +1005,7 @@ knowledgeRoutes.patch("/documents/:id", async (c) => {
 knowledgeRoutes.delete("/documents/:id", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
+  await guardDocumentManage(user, id);
   const current = (
     await db.select().from(knowledgeDocuments).where(eq(knowledgeDocuments.id, id))
   )[0];
@@ -817,14 +1081,14 @@ knowledgeRoutes.patch("/:id", async (c) => {
   return c.json({ id: row.id, slug: row.slug });
 });
 
-// R6 — rollback para revisão anterior
+// R6 — rollback para revisão anterior (apenas dono+admin)
 knowledgeRoutes.post("/documents/:id/rollback", async (c) => {
   const user = c.get("user");
   const docId = c.req.param("id");
   const body = await c.req.json().catch(() => ({})) as { revisionId?: string };
   const revisionId = body.revisionId?.trim();
   if (!revisionId) throw forbidden("Informe revisionId.");
-  await guardDocumentRead(user, docId);
+  await guardDocumentManage(user, docId);
   const target = (await db.select().from(knowledgeDocumentRevisions).where(eq(knowledgeDocumentRevisions.id, revisionId)))[0];
   if (!target || target.documentId !== docId) throw notFound("Revisão não encontrada para este documento.");
   // cria nova revisão copiando storageKey e markdown do target

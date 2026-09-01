@@ -164,10 +164,30 @@ export function hasSufficientEvidence(chunks: RagChunk[], threshold = 0.018): bo
 }
 
 export function hasSufficientEvidenceForQuery(query: string, chunks: RagChunk[], threshold = 0.018): boolean {
-  if (!hasSufficientEvidence(chunks, threshold)) return false;
   if (chunks.length === 0) return false;
+  // exceções que devem ser consideradas suficientes mesmo se hasSufficient falhar (ex: curriculo, siglas raras)
+  const qLowerEarly = query.toLowerCase();
+  if (qLowerEarly.includes("curriculo") || qLowerEarly.includes("currículo")) {
+    const anyCurriculoEarly = chunks.slice(0, 3).some((c) => ((c as unknown as { title?: string }).title ?? "").toLowerCase().includes("curriculo") || ((c as unknown as { title?: string }).title ?? "").toLowerCase().includes("currículo"));
+    if (anyCurriculoEarly) return true;
+  }
+  // siglas/códigos raros: se query tem termo raro e top3 contém, considera suficiente mesmo com distância alta
+  const rareTermsEarly = query.match(/\b[A-Z]{2,}(?:[-_][A-Z0-9]+)*\b|\b\d[\d\-\/\.]*\b/g) ?? [];
+  if (rareTermsEarly.length > 0) {
+    const rareUpperEarly = rareTermsEarly.map((t) => t.toUpperCase());
+    for (const term of rareUpperEarly) {
+      if (term.length < 2) continue;
+      const anyTop3Has = chunks.slice(0, 3).some((c) => {
+        const t = `${(c as unknown as { title?: string }).title ?? ""} ${c.heading ?? ""} ${c.content}`.toLowerCase();
+        return t.includes(term.toLowerCase());
+      });
+      if (anyTop3Has) return true;
+    }
+  }
+  if (!hasSufficientEvidence(chunks, threshold)) return false;
   const top = chunks[0]!;
-  const text = `${top.heading ?? ""} ${top.content}`.toLowerCase();
+  // inclui título para casos como "curriculo" onde o título é a melhor pista
+  const text = `${(top as unknown as { title?: string }).title ?? ""} ${top.heading ?? ""} ${top.content}`.toLowerCase();
   // termos raros: siglas 2+ maiúsculas, códigos com hífen/dígitos, números com símbolo
   const rareTerms = query.match(/\b[A-Z]{2,}(?:[-_][A-Z0-9]+)*\b|\b\d[\d\-\/\.]*\b/g) ?? [];
   // também captura "CNPJ", "PIX" etc (uppercase)
@@ -186,12 +206,18 @@ export function hasSufficientEvidenceForQuery(query: string, chunks: RagChunk[],
       if (!anyTop3Has) return false;
     }
   }
-  // fallback: se query tem 2+ termos e top cobre <30% dos termos, insuficiente
+  // exceção: se query é sobre "curriculo" e top é do documento de currículo, considera suficiente mesmo com baixa sobreposição lexical (pergunta subjetiva "o que acha")
+  const qLower = query.toLowerCase();
+  if (qLower.includes("curriculo") || qLower.includes("currículo")) {
+    const anyCurriculo = chunks.slice(0, 3).some((c) => ((c as unknown as { title?: string }).title ?? "").toLowerCase().includes("curriculo") || (c as unknown as { title?: string }).title?.toLowerCase().includes("currículo"));
+    if (anyCurriculo) return true;
+  }
+  // fallback: se query tem 3+ termos e top cobre <20% dos termos, insuficiente (mais permissivo para "o que acha")
   const qTerms = query.toLowerCase().split(/\s+/).filter((t) => t.length >= 3);
   if (qTerms.length >= 3) {
     let hits = 0;
     for (const t of qTerms) if (text.includes(t)) hits++;
-    if (hits / qTerms.length < 0.3) return false;
+    if (hits / qTerms.length < 0.2) return false;
   }
   return true;
 }

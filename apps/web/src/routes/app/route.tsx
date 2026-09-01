@@ -86,6 +86,28 @@ function AppShellInner() {
             <BookOpenText className="size-4" />
             Bases
           </Link>
+          <Link
+            to="/app/documents"
+            className={cn(
+              "flex h-8 items-center gap-2 rounded-xl px-2 text-[13px] text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+              pathname.startsWith("/app/documents") && !pathname.startsWith("/app/admin") && "bg-sidebar-accent text-sidebar-foreground",
+            )}
+          >
+            <BookOpenText className="size-4" />
+            Meus documentos
+          </Link>
+          {me.data?.user.isAdmin ? (
+            <Link
+              to="/app/admin/documents"
+              className={cn(
+                "flex h-8 items-center gap-2 rounded-xl px-2 text-[13px] text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                pathname.startsWith("/app/admin/documents") && "bg-sidebar-accent text-sidebar-foreground",
+              )}
+            >
+              <BookOpenText className="size-4" />
+              Painel docs (admin)
+            </Link>
+          ) : null}
         </div>
         <div className="px-5 pb-1.5">
           <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-sidebar-foreground/45">

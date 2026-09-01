@@ -58,15 +58,16 @@ function unwrapRows(res: unknown): unknown[] {
   return [];
 }
 
-function permissionFilterSql(roleId: string) {
-  // acesso por coleção: visibility='all' OU existe vínculo em knowledge_role
-  // injetado diretamente no WHERE — nunca recupera sem filtro
+function permissionFilterSql(roleId: string, userId?: string | null, isAdmin?: boolean) {
+  if (isAdmin) return sql`TRUE`;
+  // R6: documento pode ser publico (all) ou por cargo (by_role) via knowledge_document_role
+  // Acesso se: coleção permite OR documento permite OR é dono
+  const ownerCheck = userId ? sql` OR kd.owner_id = ${userId}::uuid` : sql``;
   return sql`(
     kcol.visibility = 'all'
-    OR EXISTS (
-      SELECT 1 FROM knowledge_role kr
-      WHERE kr.collection_id = kcol.id AND kr.role_id = ${roleId}::uuid
-    )
+    OR EXISTS (SELECT 1 FROM knowledge_role kr WHERE kr.collection_id = kcol.id AND kr.role_id = ${roleId}::uuid)
+    OR kd.visibility = 'all'${ownerCheck}
+    OR EXISTS (SELECT 1 FROM knowledge_document_role kdr WHERE kdr.document_id = kd.id AND kdr.role_id = ${roleId}::uuid)
   )`;
 }
 
@@ -103,7 +104,7 @@ export async function retrieveKnowledgeChunks(
   query: string,
   roleId: string | null,
   topK = RAG_TOP_K,
-  opts?: { isAdmin?: boolean },
+  opts?: { isAdmin?: boolean; userId?: string | null },
 ): Promise<RagChunk[]> {
   const { chunks } = await retrieveKnowledgeChunksWithTelemetry(query, roleId, topK, opts);
   return chunks;
@@ -113,7 +114,7 @@ export async function retrieveKnowledgeChunksWithTelemetry(
   query: string,
   roleId: string | null,
   topK = RAG_TOP_K,
-  opts?: { isAdmin?: boolean },
+  opts?: { isAdmin?: boolean; userId?: string | null },
 ): Promise<{
   chunks: RagChunk[];
   telemetry: {
@@ -162,6 +163,7 @@ export async function retrieveKnowledgeChunksWithTelemetry(
   // normaliza query para tsvector: remove chars que quebram tsquery
   const tsQuery = q.slice(0, 400);
   const isAdmin = opts?.isAdmin === true;
+  const userId = opts?.userId ?? null;
 
   // 1) vector search (se embedding falhar, vectorRows = [])
   let vectorRows: VectorRow[] = [];
@@ -176,7 +178,7 @@ export async function retrieveKnowledgeChunksWithTelemetry(
     const tokens = Math.ceil(q.length / 4);
     costUsd = (tokens / 1_000_000) * 0.02;
     const literal = vectorLiteral(embedding);
-    const perm = isAdmin ? sql`TRUE` : permissionFilterSql(roleId!);
+    const perm = isAdmin ? sql`TRUE` : permissionFilterSql(roleId!, userId, false);
     const res = await sqlExecute<VectorRow>(sql`
       SELECT
         kc.id as chunk_id,
@@ -206,7 +208,7 @@ export async function retrieveKnowledgeChunksWithTelemetry(
   let textMs: number | null = null;
   try {
     const t0 = performance.now();
-    const perm = isAdmin ? sql`TRUE` : permissionFilterSql(roleId!);
+    const perm = isAdmin ? sql`TRUE` : permissionFilterSql(roleId!, userId, false);
     // websearch_to_tsquery lida melhor com siglas, códigos e frases; simple como fallback para códigos com hífen
     const res = await sqlExecute<TextRow>(sql`
       SELECT
@@ -258,14 +260,13 @@ export async function retrieveKnowledgeChunksWithTelemetry(
   // 3) RRF
   const fused = rrfCombine(vectorRows, textRows, candidateLimit);
 
-  // 3b) R5 — rerank dos melhores candidatos (Cohere ou heurística) antes do corte final
+  // 3b) R5 — rerank dos melhores candidatos (Voyage 2.5-lite via OpenRouter ou heurística)
   let reranked: RagChunk[] = fused;
   let rerankMs: number | null = null;
   if (fused.length > 0) {
     const t0 = performance.now();
     try {
       reranked = await rerankChunks(q, fused.slice(0, Math.min(fused.length, 12)));
-      // mantém ordem reranqueada mas preserva tail não reranqueado
       if (fused.length > 12) reranked = [...reranked, ...fused.slice(12)];
     } catch (e) {
       console.warn("rerank falhou, usando RRF", e instanceof Error ? e.message : String(e));
@@ -274,8 +275,27 @@ export async function retrieveKnowledgeChunksWithTelemetry(
     rerankMs = Math.round(performance.now() - t0);
   }
 
-  // 4) deduplicação + diversidade (4–8 finais)
-  const { deduped, chosen } = dedupAndDiversify(reranked, topK);
+  // 3c) R5 fix: filtra stubs irrelevantes pós-rerank — só mantém chunks com sobreposição lexical ou score alto
+  // Para "curriculo" só deve ficar o documento citado, não os 4 stubs genéricos
+  const topScore = reranked[0]?.rrfScore ?? 0;
+  const filtered = reranked.filter((c) => {
+    const lex = (() => {
+      const qTerms = q.toLowerCase().split(/\s+/).filter((t) => t.length >= 3);
+      const txt = `${(c as unknown as { title?: string }).title ?? ""} ${c.heading ?? ""} ${c.content}`.toLowerCase();
+      if (qTerms.length === 0) return 0;
+      let hits = 0;
+      for (const t of qTerms) if (txt.includes(t)) hits++;
+      return hits / qTerms.length;
+    })();
+    const score = c.rrfScore ?? 0;
+    // mantém se: lexical >= 0.15 OU score >= 60% do top OU é do mesmo doc do top e score razoável
+    const isTopDoc = c.documentId === reranked[0]?.documentId;
+    return lex >= 0.15 || score >= topScore * 0.6 || (isTopDoc && score >= topScore * 0.4);
+  });
+  const toDiversify = filtered.length >= 2 ? filtered : reranked; // fallback: se filtrou demais, usa reranked
+
+  // 4) deduplicação + diversidade (4–8 finais, mas agora já filtrado)
+  const { deduped, chosen } = dedupAndDiversify(toDiversify, topK);
 
   const latencyMs = Math.round(performance.now() - start);
   const telemetry = {
