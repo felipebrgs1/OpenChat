@@ -1,5 +1,6 @@
 import type { MeResponse, PublicUser, TokenResponse } from "@nexo/contracts";
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "./api";
 import { authDisabled } from "./flags";
@@ -17,42 +18,68 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [ready, setReady] = useState(false);
-  const [user, setUser] = useState<PublicUser | null>(getSession()?.user ?? null);
+  const queryClient = useQueryClient();
 
-  const applyTokens = (tokens: TokenResponse) => {
-    setSession(tokens);
-    setUser(tokens.user);
-  };
+  const shouldFetch = Boolean(getSession()?.accessToken) || authDisabled();
 
-  const refreshMe = async () => {
-    if (!getSession()?.accessToken && !authDisabled()) {
-      setUser(null);
-      return null;
-    }
-    try {
+  const meQuery = useQuery({
+    queryKey: ["me"],
+    // só busca quando tem token ou auth desabilitado — evita 401 desnecessário
+    enabled: shouldFetch,
+    staleTime: 1000 * 60 * 2,
+    gcTime: 1000 * 60 * 10,
+    retry: false,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
       const me = await api<MeResponse>("/api/me");
       const session = getSession();
       if (session) {
+        // mantém token mas atualiza user em cache local
         setSession({ ...session, user: me.user });
       }
-      setUser(me.user);
+      return me;
+    },
+  });
+
+  // user vem do cache do TanStack; fallback para session (SSR/initial) se query ainda não rodou
+  const user: PublicUser | null = meQuery.data?.user ?? getSession()?.user ?? null;
+  // ready = já sabemos se está logado ou não. Se não precisa fetch, ready imediato.
+  // Se precisa, ready quando query já tentou (success ou error).
+  const ready = !shouldFetch ? true : meQuery.isFetched || meQuery.isError;
+
+  const applyTokens = useCallback(
+    (tokens: TokenResponse) => {
+      setSession(tokens);
+      // popula cache ["me"] imediatamente — evita refetch
+      queryClient.setQueryData<MeResponse>(["me"], { user: tokens.user } as MeResponse);
+    },
+    [queryClient],
+  );
+
+  const refreshMe = useCallback(async (): Promise<MeResponse | null> => {
+    if (!getSession()?.accessToken && !authDisabled()) {
+      queryClient.setQueryData(["me"], null);
+      return null;
+    }
+    try {
+      // fetchQuery respeita cache + atualiza; invalidate forçaria refetch mas queremos retorno
+      const me = await queryClient.fetchQuery<MeResponse>({
+        queryKey: ["me"],
+        queryFn: async () => {
+          const data = await api<MeResponse>("/api/me");
+          const session = getSession();
+          if (session) setSession({ ...session, user: data.user });
+          return data;
+        },
+        staleTime: 0,
+      });
       return me;
     } catch {
       clearSession();
-      setUser(null);
+      queryClient.setQueryData(["me"], null);
       return null;
     }
-  };
-
-  useEffect(() => {
-    void (async () => {
-      if (getSession()?.accessToken || authDisabled()) {
-        await refreshMe();
-      }
-      setReady(true);
-    })();
-  }, []);
+  }, [queryClient]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -65,6 +92,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           body: JSON.stringify({ email, password }),
         });
         applyTokens(tokens);
+        // garante que ["me"] está consistente após login
+        await queryClient.invalidateQueries({ queryKey: ["me"] });
       },
       async logout() {
         const session = getSession();
@@ -74,10 +103,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             body: JSON.stringify({ refreshToken: session?.refreshToken }),
           });
         } catch {
-          // local logout still happens
+          // logout local mesmo se backend falhar
         }
         clearSession();
-        setUser(null);
+        queryClient.setQueryData(["me"], null);
+        queryClient.removeQueries({ queryKey: ["me"] });
       },
       async acceptInvite(token, name, password) {
         const tokens = await api<TokenResponse>(`/api/invites/${token}/accept`, {
@@ -86,10 +116,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           body: JSON.stringify({ name, password }),
         });
         applyTokens(tokens);
+        await queryClient.invalidateQueries({ queryKey: ["me"] });
       },
       refreshMe,
     }),
-    [ready, user],
+    [ready, user, applyTokens, queryClient, refreshMe],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

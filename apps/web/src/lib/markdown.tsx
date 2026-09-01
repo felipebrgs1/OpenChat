@@ -1,9 +1,12 @@
-import Markdown from "react-markdown";
+import * as React from "react";
+
+const Markdown = React.lazy(() => import("react-markdown"));
 
 export function MarkdownBody({ content }: { content: string }) {
   return (
     <div className="space-y-3 text-[15px] leading-7 text-foreground">
-      <Markdown
+      <React.Suspense fallback={<div className="animate-pulse text-sm text-muted-foreground">carregando…</div>}>
+        <Markdown
         components={{
           h1: ({ children }) => (
             <h1 className="text-xl font-semibold tracking-tight">{children}</h1>
@@ -49,6 +52,7 @@ export function MarkdownBody({ content }: { content: string }) {
       >
         {content}
       </Markdown>
+        </React.Suspense>
     </div>
   );
 }

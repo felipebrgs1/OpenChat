@@ -18,7 +18,7 @@ import {
   User,
   Zap,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { api, ApiRequestError } from "@/lib/api";
@@ -31,6 +31,7 @@ function SettingsPage() {
   const me = useQuery({
     queryKey: ["me"],
     queryFn: () => api<MeResponse>("/api/me"),
+    staleTime: 30_000,
   });
 
   if (!me.data) {
@@ -45,7 +46,7 @@ function SettingsPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-10 px-4 py-8 sm:px-8 sm:py-10">
       <SettingsForm key={me.data.user.id} initialName={me.data.user.name} email={me.data.user.email} />
-      <HermesLoop />
+      <HermesLoop me={me.data} />
     </div>
   );
 }
@@ -107,23 +108,29 @@ function SettingsForm({ initialName, email }: { initialName: string; email: stri
   );
 }
 
-function HermesLoop() {
+function HermesLoop({ me }: { me: MeResponse }) {
   const queryClient = useQueryClient();
-  const me = useQuery({ queryKey: ["me"], queryFn: () => api<MeResponse>("/api/me") });
   const memories = useQuery({
     queryKey: ["me", "memory"],
     queryFn: () =>
       api<{ memories: UserMemory[]; memorySummary: string | null; personalPrompt: string | null; autoLearn: boolean }>(
         "/api/me/memory",
       ),
+    staleTime: 30_000,
   });
 
-  const [prompt, setPrompt] = useState("");
+  // TanStack Query como fonte da verdade — sem useEffect de sincronização.
+  // prompt é estado local apenas para edição; valor inicial vem do cache.
+  // Usamos `undefined` como sentinel: enquanto usuário não editou, exibe
+  // o valor do servidor. Isso evita o anti-pattern `useEffect(() => setPrompt(data))`
+  // que sobrescreve digitação em refetch e causa renders extras.
+  const [promptDraft, setPromptDraft] = useState<string | undefined>(undefined);
   const [newMem, setNewMem] = useState("");
 
-  useEffect(() => {
-    if (memories.data?.personalPrompt !== undefined) setPrompt(memories.data.personalPrompt ?? "");
-  }, [memories.data?.personalPrompt]);
+  const serverPrompt = memories.data?.personalPrompt ?? "";
+  const prompt = promptDraft !== undefined ? promptDraft : serverPrompt;
+  // detecta dirty sem effect
+  const isPromptDirty = promptDraft !== undefined && promptDraft !== serverPrompt;
 
   const savePrompt = useMutation({
     mutationFn: () =>
@@ -134,6 +141,7 @@ function HermesLoop() {
     onSuccess: (data) => {
       queryClient.setQueryData(["me"], data);
       queryClient.invalidateQueries({ queryKey: ["me", "memory"] });
+      setPromptDraft(undefined); // volta a espelhar servidor — sem effect
       toast.success("Prompt pessoal salvo com sucesso!");
     },
     onError: (e) => toast.error(e instanceof ApiRequestError ? e.message : "Falha ao salvar"),
@@ -170,7 +178,7 @@ function HermesLoop() {
     },
   });
 
-  const autoLearn = memories.data?.autoLearn ?? me.data?.user.autoLearn ?? true;
+  const autoLearn = memories.data?.autoLearn ?? me.user.autoLearn ?? true;
 
   return (
     <section className="space-y-6">
@@ -193,7 +201,7 @@ function HermesLoop() {
         </div>
         <ol className="mt-2.5 list-decimal space-y-1.5 pl-5 text-muted-foreground">
           <li>
-            <b className="text-foreground">Prompt do cargo:</b> <span className="font-medium text-foreground">{me.data?.role?.name ?? "—"}</span> — definido pelo admin com as diretrizes operacionais.
+            <b className="text-foreground">Prompt do cargo:</b> <span className="font-medium text-foreground">{me.role?.name ?? "—"}</span> — definido pelo admin com as diretrizes operacionais.
           </li>
           <li>
             <b className="text-foreground">Seu prompt:</b> diretrizes pessoais suas (ex: “sempre responda em tópicos curtos, prefiro PT-BR informal”).
@@ -221,7 +229,7 @@ function HermesLoop() {
           id="personalPrompt"
           placeholder="Ex: Sou do comercial, prefiro respostas em tópicos, sempre cite a fonte, meu time é X..."
           value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
+          onChange={(e) => setPromptDraft(e.target.value)}
           rows={4}
           maxLength={2000}
         />
@@ -229,7 +237,7 @@ function HermesLoop() {
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <Button
             onClick={() => savePrompt.mutate()}
-            disabled={savePrompt.isPending}
+            disabled={savePrompt.isPending || !isPromptDirty}
             size="sm"
           >
             {savePrompt.isPending ? (
@@ -240,9 +248,9 @@ function HermesLoop() {
             Salvar meu prompt
           </Button>
 
-          {me.data?.role ? (
-            <p className="max-w-sm truncate text-[11px] text-muted-foreground" title={me.data.role.systemPrompt}>
-              Cargo: <span className="font-medium text-foreground">{me.data.role.name}</span> — “{me.data.role.systemPrompt.slice(0, 70)}…”
+          {me.role ? (
+            <p className="max-w-sm truncate text-[11px] text-muted-foreground" title={me.role.systemPrompt}>
+              Cargo: <span className="font-medium text-foreground">{me.role.name}</span> — “{me.role.systemPrompt.slice(0, 70)}…”
             </p>
           ) : null}
         </div>

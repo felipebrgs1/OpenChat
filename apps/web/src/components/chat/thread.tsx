@@ -3,7 +3,7 @@ import { Button } from "@nexo/ui/components/button";
 import { cn } from "@nexo/ui/lib/utils";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, RotateCcw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ChatComposer } from "@/components/chat/composer";
@@ -28,11 +28,13 @@ export function ChatThread({
   const me = useQuery({
     queryKey: ["me"],
     queryFn: () => api<MeResponse>("/api/me"),
+    staleTime: 30_000,
   });
   const history = useQuery({
     queryKey: ["messages", conversationId],
     queryFn: () =>
       api<{ messages: ChatMessage[] }>(`/api/conversations/${conversationId}/messages`),
+    staleTime: 10_000,
   });
   const [live, setLive] = useState<ChatMessage[] | null>(null);
   const [draft, setDraft] = useState("");
@@ -47,152 +49,141 @@ export function ChatThread({
   const messages = live ?? history.data?.messages ?? [];
   const lastMessage = messages[messages.length - 1];
 
-  useEffect(() => {
-    setLive(null);
-    sentInitial.current = false;
-    setDraft("");
-  }, [conversationId]);
+  // Nota: reset ao trocar conversationId já é feito via key={conversationId}
+  // no parent (chat.$conversationId.tsx). Este estado live/draft é scoped
+  // ao mount, não precisa de useEffect([conversationId]).
 
-  useEffect(() => {
-    if (!stickToBottom.current) {
-      return;
-    }
+  // scroll imperativo — useLayoutEffect evita flash, roda após DOM mas antes do paint
+  useLayoutEffect(() => {
+    if (!stickToBottom.current) return;
     const node = scrollerRef.current;
-    if (node) {
-      node.scrollTop = node.scrollHeight;
-    }
-  }, [lastMessage?.id, lastMessage?.content, streaming, messages.length]);
+    if (node) node.scrollTop = node.scrollHeight;
+  }, [lastMessage?.id, lastMessage?.content, streaming]);
 
-  const send = async (content: string, starterId?: string | null) => {
-    const text = content.trim();
-    if (!text || streaming) {
-      return;
-    }
-    setDraft("");
-    setStreaming(true);
-    setSlow(false);
-    stickToBottom.current = true;
-    if (slowTimer.current) {
-      window.clearTimeout(slowTimer.current);
-    }
-    slowTimer.current = window.setTimeout(() => setSlow(true), 8000);
-
-    const tempUser: ChatMessage = {
-      id: `temp-user-${Date.now()}`,
-      conversationId,
-      role: "user",
-      content: text,
-      model: null,
-      promptTokens: null,
-      completionTokens: null,
-      credits: null,
-      tps: null,
-      latencyMs: null,
-      finishReason: null,
-      error: null,
-      createdAt: new Date().toISOString(),
-    };
-    const tempAssistant: ChatMessage = {
-      ...tempUser,
-      id: `temp-assistant-${Date.now()}`,
-      role: "assistant",
-      content: "",
-    };
-    setLive((current) => [...(current ?? history.data?.messages ?? []), tempUser, tempAssistant]);
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-    let assistantId = tempAssistant.id;
-
-    try {
-      await streamChat({
-        conversationId,
-        content: text,
-        model,
-        starterId,
-        signal: controller.signal,
-        onMeta: (meta) => {
-          assistantId = meta.messageId;
-          setLive((current) =>
-            (current ?? []).map((row) =>
-              row.id === tempAssistant.id ? { ...row, id: meta.messageId, model: meta.model } : row,
-            ),
-          );
-        },
-        onDelta: (delta) => {
-          setLive((current) =>
-            (current ?? []).map((row) =>
-              row.id === assistantId ? { ...row, content: row.content + delta } : row,
-            ),
-          );
-        },
-        onDone: (done) => {
-          setLive((current) =>
-            (current ?? []).map((row) =>
-              row.id === done.messageId
-                ? {
-                    ...row,
-                    promptTokens: done.promptTokens,
-                    completionTokens: done.completionTokens,
-                    credits: (done.credits as string | null) ?? null,
-                    tps: (done.tps as number | null) ?? null,
-                    latencyMs: (done.latencyMs as number | null) ?? null,
-                  }
-                : row,
-            ),
-          );
-          if (done.balanceAfter) {
-            void queryClient.invalidateQueries({ queryKey: ["me"] });
-            void queryClient.invalidateQueries({ queryKey: ["credits", "balance"] });
-          }
-        },
-        onError: (_code, message) => {
-          setLive((current) =>
-            (current ?? []).map((row) =>
-              row.id === assistantId ? { ...row, error: message } : row,
-            ),
-          );
-          toast.error(message);
-        },
-      });
-    } catch (error) {
-      const message = error instanceof ApiRequestError ? error.message : "Erro de rede.";
-      setLive((current) =>
-        (current ?? []).map((row) => (row.id === assistantId ? { ...row, error: message } : row)),
-      );
-      toast.error(message);
-    } finally {
-      setStreaming(false);
+  const send = useCallback(
+    async (content: string, starterId?: string | null) => {
+      const text = content.trim();
+      if (!text || streaming) return;
+      setDraft("");
+      setStreaming(true);
       setSlow(false);
-      abortRef.current = null;
-      if (slowTimer.current) {
-        window.clearTimeout(slowTimer.current);
-      }
-      await queryClient.invalidateQueries({ queryKey: ["conversations"] });
-    }
-  };
+      stickToBottom.current = true;
+      if (slowTimer.current) window.clearTimeout(slowTimer.current);
+      slowTimer.current = window.setTimeout(() => setSlow(true), 8000);
 
+      const tempUser: ChatMessage = {
+        id: `temp-user-${Date.now()}`,
+        conversationId,
+        role: "user",
+        content: text,
+        model: null,
+        promptTokens: null,
+        completionTokens: null,
+        credits: null,
+        tps: null,
+        latencyMs: null,
+        finishReason: null,
+        error: null,
+        createdAt: new Date().toISOString(),
+      };
+      const tempAssistant: ChatMessage = {
+        ...tempUser,
+        id: `temp-assistant-${Date.now()}`,
+        role: "assistant",
+        content: "",
+      };
+      setLive((current) => [...(current ?? history.data?.messages ?? []), tempUser, tempAssistant]);
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+      let assistantId = tempAssistant.id;
+
+      try {
+        await streamChat({
+          conversationId,
+          content: text,
+          model,
+          starterId,
+          signal: controller.signal,
+          onMeta: (meta) => {
+            assistantId = meta.messageId;
+            setLive((current) =>
+              (current ?? []).map((row) =>
+                row.id === tempAssistant.id ? { ...row, id: meta.messageId, model: meta.model } : row,
+              ),
+            );
+          },
+          onDelta: (delta) => {
+            setLive((current) =>
+              (current ?? []).map((row) =>
+                row.id === assistantId ? { ...row, content: row.content + delta } : row,
+              ),
+            );
+          },
+          onDone: (done) => {
+            setLive((current) =>
+              (current ?? []).map((row) =>
+                row.id === done.messageId
+                  ? {
+                      ...row,
+                      promptTokens: done.promptTokens,
+                      completionTokens: done.completionTokens,
+                      credits: (done.credits as string | null) ?? null,
+                      tps: (done.tps as number | null) ?? null,
+                      latencyMs: (done.latencyMs as number | null) ?? null,
+                    }
+                  : row,
+              ),
+            );
+            if (done.balanceAfter) {
+              void queryClient.invalidateQueries({ queryKey: ["me"] });
+              void queryClient.invalidateQueries({ queryKey: ["credits", "balance"] });
+            }
+          },
+          onError: (_code, message) => {
+            setLive((current) =>
+              (current ?? []).map((row) =>
+                row.id === assistantId ? { ...row, error: message } : row,
+              ),
+            );
+            toast.error(message);
+          },
+        });
+      } catch (error) {
+        const message = error instanceof ApiRequestError ? error.message : "Erro de rede.";
+        setLive((current) =>
+          (current ?? []).map((row) => (row.id === assistantId ? { ...row, error: message } : row)),
+        );
+        toast.error(message);
+      } finally {
+        setStreaming(false);
+        setSlow(false);
+        abortRef.current = null;
+        if (slowTimer.current) window.clearTimeout(slowTimer.current);
+        await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      }
+    },
+    [conversationId, history.data?.messages, model, queryClient, streaming],
+  );
+
+  // envia initialPrompt uma única vez após history carregar (deep-link ?prompt=)
+  // TanStack Query já controla loading; este effect é o único legítimo aqui
+  // e agora com deps corretas (sem eslint-disable)
   useEffect(() => {
-    if (!initialPrompt || sentInitial.current || !history.isSuccess) {
-      return;
-    }
-    // evita duplicar no F5: se o histórico já contém essa mensagem, não reenvia
+    if (!initialPrompt || sentInitial.current || !history.isSuccess) return;
+
     const alreadySent = history.data?.messages.some(
       (m) => m.role === "user" && m.content.trim() === initialPrompt.trim(),
     );
     if (alreadySent) {
       sentInitial.current = true;
-      // limpa ?prompt= da URL pra F5 não reenviar
       window.history.replaceState(null, "", window.location.pathname);
       return;
     }
     sentInitial.current = true;
-    // limpa URL antes de enviar pra que um F5 durante o stream não duplique
     window.history.replaceState(null, "", window.location.pathname);
     void send(initialPrompt, initialStarterId);
-    // initial send once after history loads
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [history.isSuccess, initialPrompt, initialStarterId]);
+  }, [history.isSuccess, history.data?.messages, initialPrompt, initialStarterId, send]);
 
   const lastUser = [...messages].reverse().find((row) => row.role === "user");
   const copy = async (message: ChatMessage) => {

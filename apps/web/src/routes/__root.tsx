@@ -1,7 +1,15 @@
 import { Toaster } from "@nexo/ui/components/sonner";
 import { TooltipProvider } from "@nexo/ui/components/tooltip";
 import { HeadContent, Outlet, createRootRouteWithContext } from "@tanstack/react-router";
-import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
+import * as React from "react";
+
+const TanStackRouterDevtools = import.meta.env.DEV
+  ? React.lazy(() =>
+      import("@tanstack/react-router-devtools").then((m) => ({
+        default: m.TanStackRouterDevtools,
+      })),
+    )
+  : () => null;
 
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/auth";
@@ -35,7 +43,11 @@ function RootComponent() {
           </AuthProvider>
         </TooltipProvider>
       </ThemeProvider>
-      <TanStackRouterDevtools position="bottom-left" />
+      {import.meta.env.DEV ? (
+        <React.Suspense fallback={null}>
+          <TanStackRouterDevtools position="bottom-left" />
+        </React.Suspense>
+      ) : null}
     </>
   );
 }

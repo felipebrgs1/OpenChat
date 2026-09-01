@@ -30,6 +30,7 @@ function ConversationPage() {
 
   return (
     <ChatThread
+      key={conversationId}
       conversationId={conversationId}
       initialPrompt={prompt}
       initialStarterId={starterId}
