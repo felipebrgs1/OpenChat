@@ -10,10 +10,11 @@ import {
   knowledgeCollections,
   knowledgeDocumentRevisions,
   knowledgeDocuments,
+  knowledgeFeedback,
   knowledgeIngestions,
   knowledgeRoles,
 } from "@nexo/db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, lte, sql } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { writeAudit } from "../lib/audit";
@@ -45,6 +46,11 @@ function toDocument(row: DocumentRow) {
     filename: row.filename,
     mime: row.mime,
     bodyMd: row.bodyMd,
+    ownerId: (row as unknown as { ownerId: string | null }).ownerId ?? null,
+    status: (row as unknown as { status: string }).status ?? "published",
+    reviewAt: (row as unknown as { reviewAt: Date | null }).reviewAt?.toISOString() ?? null,
+    publishedAt: (row as unknown as { publishedAt: Date | null }).publishedAt?.toISOString() ?? null,
+    checksum: row.checksum,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -326,6 +332,17 @@ knowledgeRoutes.post("/:id/documents", async (c) => {
   const id = c.req.param("id");
   const collection = await guardCollectionRead(user, id);
   const body = await parseBody(createKnowledgeDocumentBodySchema, await c.req.json());
+  const docChecksum = checksum(body.bodyMd);
+  // R6: dedup por checksum na mesma coleção
+  const dup = (
+    await db
+      .select()
+      .from(knowledgeDocuments)
+      .where(and(eq(knowledgeDocuments.collectionId, collection.id), eq(knowledgeDocuments.checksum, docChecksum), isNull(knowledgeDocuments.deletedAt)))
+  )[0];
+  if (dup) {
+    return c.json({ error: { code: "CONFLICT", message: "Documento com mesmo conteúdo já existe." }, existingId: dup.id }, 409);
+  }
 
   const [row] = await db
     .insert(knowledgeDocuments)
@@ -334,8 +351,12 @@ knowledgeRoutes.post("/:id/documents", async (c) => {
       title: body.title,
       bodyMd: body.bodyMd,
       sourceType: "markdown",
-      checksum: checksum(body.bodyMd),
+      checksum: docChecksum,
       createdBy: user.id,
+      ownerId: user.id,
+      status: "published",
+      reviewAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+      publishedAt: new Date(),
     })
     .returning();
   if (!row) {
@@ -382,8 +403,25 @@ knowledgeRoutes.post("/:id/upload", async (c) => {
   }
   const fileChecksum = Bun.SHA256.hash(buf, "hex");
 
-  // dedup por checksum dentro da mesma coleção (alerta mas permite)
-  // cria documento + revisão
+  // R6: dedup por checksum na mesma coleção — evita duplicatas
+  const dupUpload = (
+    await db
+      .select()
+      .from(knowledgeDocuments)
+      .where(and(eq(knowledgeDocuments.collectionId, collection.id), eq(knowledgeDocuments.checksum, fileChecksum), isNull(knowledgeDocuments.deletedAt)))
+  )[0];
+  if (dupUpload) {
+    return c.json({ error: { code: "CONFLICT", message: "Arquivo com mesmo conteúdo já existe." }, existingId: dupUpload.id }, 409);
+  }
+
+  // R6: owner/status/reviewAt via form (opcional)
+  const ownerIdForm = form.get("ownerId");
+  const statusForm = form.get("status");
+  const reviewAtForm = form.get("reviewAt");
+  const ownerId = typeof ownerIdForm === "string" && ownerIdForm.trim() ? ownerIdForm.trim() : user.id;
+  const status = typeof statusForm === "string" && ["draft", "published", "obsolete"].includes(statusForm) ? (statusForm as "draft" | "published" | "obsolete") : "published";
+  const reviewAt = typeof reviewAtForm === "string" && reviewAtForm.trim() ? new Date(reviewAtForm.trim()) : new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+
   const titleForm = form.get("title");
   const title =
     (typeof titleForm === "string" && titleForm.trim()) ||
@@ -401,6 +439,10 @@ knowledgeRoutes.post("/:id/upload", async (c) => {
       mime,
       checksum: fileChecksum,
       createdBy: user.id,
+      ownerId,
+      status,
+      reviewAt: Number.isNaN(reviewAt.getTime()) ? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) : reviewAt,
+      publishedAt: status === "published" ? new Date() : null,
     })
     .returning();
   if (!docRow) throw new Error("failed to create document");
@@ -495,6 +537,19 @@ knowledgeRoutes.post("/documents/:id/revisions", async (c) => {
     .then((r) => r[0]?.revisionNumber ?? 0);
   const nextRev = maxRev + 1;
   const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : "";
+  // R6: dedup por checksum dentro do mesmo documento — evita duplicatas
+  const latestRevForDedup = (
+    await db
+      .select()
+      .from(knowledgeDocumentRevisions)
+      .where(eq(knowledgeDocumentRevisions.documentId, docId))
+      .orderBy(desc(knowledgeDocumentRevisions.revisionNumber))
+      .limit(1)
+  )[0];
+  if (latestRevForDedup && latestRevForDedup.checksum === fileChecksum) {
+    return c.json({ error: { code: "CONFLICT", message: "Mesma versão já existe." }, existingRevisionId: latestRevForDedup.id }, 409);
+  }
+
   const revisionId = crypto.randomUUID();
   const storageKey = buildStorageKey(docId, revisionId, ext);
   await putObject(storageKey, buf, mime || "application/octet-stream");
@@ -623,22 +678,41 @@ knowledgeRoutes.post("/ingestions/:id/process", async (c) => {
 knowledgeRoutes.patch("/documents/:id", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
-  const body = await parseBody(patchKnowledgeDocumentBodySchema, await c.req.json());
+  const raw = await c.req.json();
+  const body = await parseBody(patchKnowledgeDocumentBodySchema, raw);
   const current = (
     await db.select().from(knowledgeDocuments).where(eq(knowledgeDocuments.id, id))
   )[0];
   if (!current || current.deletedAt) {
     throw notFound("Documento não encontrado.");
   }
+  // R6: owner/status/reviewAt
+  const extra = raw as { ownerId?: string; status?: string; reviewAt?: string | null };
+  const patch: Record<string, unknown> = {
+    title: body.title ?? current.title,
+    bodyMd: body.bodyMd ?? current.bodyMd,
+    checksum: checksum(body.bodyMd ?? current.bodyMd),
+    updatedAt: new Date(),
+  };
+  if (extra.ownerId !== undefined) {
+    if (extra.ownerId === null) patch.ownerId = null;
+    else if (typeof extra.ownerId === "string" && extra.ownerId.trim()) patch.ownerId = extra.ownerId.trim();
+  }
+  if (extra.status !== undefined && ["draft", "published", "obsolete"].includes(extra.status)) {
+    patch.status = extra.status;
+    if (extra.status === "published" && !current.publishedAt) patch.publishedAt = new Date();
+  }
+  if (extra.reviewAt !== undefined) {
+    if (extra.reviewAt === null) patch.reviewAt = null;
+    else {
+      const d = new Date(extra.reviewAt);
+      if (!Number.isNaN(d.getTime())) patch.reviewAt = d;
+    }
+  }
 
   const [row] = await db
     .update(knowledgeDocuments)
-    .set({
-      title: body.title ?? current.title,
-      bodyMd: body.bodyMd ?? current.bodyMd,
-      checksum: checksum(body.bodyMd ?? current.bodyMd),
-      updatedAt: new Date(),
-    })
+    .set(patch as never)
     .where(eq(knowledgeDocuments.id, id))
     .returning();
   if (!row) {
@@ -741,6 +815,110 @@ knowledgeRoutes.patch("/:id", async (c) => {
   });
 
   return c.json({ id: row.id, slug: row.slug });
+});
+
+// R6 — rollback para revisão anterior
+knowledgeRoutes.post("/documents/:id/rollback", async (c) => {
+  const user = c.get("user");
+  const docId = c.req.param("id");
+  const body = await c.req.json().catch(() => ({})) as { revisionId?: string };
+  const revisionId = body.revisionId?.trim();
+  if (!revisionId) throw forbidden("Informe revisionId.");
+  await guardDocumentRead(user, docId);
+  const target = (await db.select().from(knowledgeDocumentRevisions).where(eq(knowledgeDocumentRevisions.id, revisionId)))[0];
+  if (!target || target.documentId !== docId) throw notFound("Revisão não encontrada para este documento.");
+  // cria nova revisão copiando storageKey e markdown do target
+  const maxRev = await db.select().from(knowledgeDocumentRevisions).where(eq(knowledgeDocumentRevisions.documentId, docId)).orderBy(desc(knowledgeDocumentRevisions.revisionNumber)).limit(1).then(r=>r[0]?.revisionNumber ?? 0);
+  const nextRev = maxRev + 1;
+  const newId = crypto.randomUUID();
+  // copia objeto no storage (se S3) — para local, copia arquivo
+  try {
+    const buf = await getObject(target.storageKey);
+    const newKey = buildStorageKey(docId, newId, target.filename.includes(".") ? target.filename.slice(target.filename.lastIndexOf(".")) : "");
+    await putObject(newKey, buf, target.mime);
+    const [newRev] = await db.insert(knowledgeDocumentRevisions).values({
+      id: newId,
+      documentId: docId,
+      revisionNumber: nextRev,
+      storageKey: newKey,
+      filename: target.filename,
+      mime: target.mime,
+      sizeBytes: target.sizeBytes,
+      checksum: target.checksum,
+      extractedMarkdown: target.extractedMarkdown,
+      extractionMetadata: { ...(target.extractionMetadata as Record<string, unknown> ?? {}), rollbackFrom: target.id },
+      createdBy: user.id,
+    }).returning();
+    if (!newRev) throw new Error("failed to create rollback revision");
+    // marca anteriores como superseded
+    await db.execute(sql`UPDATE knowledge_document_revision SET superseded_at = now() WHERE document_id = ${docId}::uuid AND id != ${newId}::uuid AND superseded_at IS NULL`);
+    const [ing] = await db.insert(knowledgeIngestions).values({ documentRevisionId: newRev.id, status: "queued" }).returning();
+    if (ing) enqueueIngestionAsync(ing.id);
+    // atualiza doc para refletir rollback imediato (bodyMd)
+    if (target.extractedMarkdown) {
+      await db.update(knowledgeDocuments).set({ bodyMd: target.extractedMarkdown.slice(0,500000), checksum: target.checksum, updatedAt: new Date() }).where(eq(knowledgeDocuments.id, docId));
+    }
+    await writeAudit({ actorId: user.id, action: "knowledge.rollback", entityType: "knowledge_document", entityId: docId, meta: { from: target.id, to: newId, nextRev } });
+    return c.json({ revision: newRev, ingestion: ing });
+  } catch (e) {
+    throw new Error(`Rollback falhou: ${e instanceof Error ? e.message : String(e)}`);
+  }
+});
+
+// R6 — painel de operação (admin)
+knowledgeRoutes.get("/ops/panel", async (c) => {
+  const user = c.get("user");
+  // admin já garantido pelo guard, mas checa isAdmin para painel completo
+  if (!user.isAdmin) throw forbidden();
+  const allDocs = await db.select().from(knowledgeDocuments).where(isNull(knowledgeDocuments.deletedAt));
+  const now = new Date();
+  const overdue = allDocs.filter((d) => (d as unknown as { reviewAt: Date | null }).reviewAt && (d as unknown as { reviewAt: Date }).reviewAt < now && (d as unknown as { status: string }).status !== "obsolete");
+  const byStatus = allDocs.reduce<Record<string, number>>((acc, d) => { const s = (d as unknown as { status: string }).status ?? "published"; acc[s] = (acc[s] ?? 0)+1; return acc; }, {});
+  const byOwner = allDocs.reduce<Record<string, number>>((acc, d) => { const o = (d as unknown as { ownerId: string | null }).ownerId ?? "sem dono"; acc[o] = (acc[o] ?? 0)+1; return acc; }, {});
+  // docs mais usados: top por número de chunks (proxy para uso) — em produção contaria retrieval logs
+  const topDocs = [...allDocs].sort((a,b)=> b.updatedAt.getTime() - a.updatedAt.getTime()).slice(0,10).map(d=> ({ id: d.id, title: d.title, status: (d as unknown as { status: string }).status, reviewAt: (d as unknown as { reviewAt: Date | null }).reviewAt?.toISOString() ?? null, ownerId: (d as unknown as { ownerId: string | null }).ownerId }));
+  // perguntas sem resposta: feedback sem_fonte + avaliação negativa
+  const feedbacks = await db.select().from(knowledgeFeedback).orderBy(desc(knowledgeFeedback.createdAt)).limit(50);
+  const semFonte = feedbacks.filter(f=> f.rating === "sem_fonte");
+  const negativos = feedbacks.filter(f=> ["incorreta","desatualizada","sem_fonte"].includes(f.rating));
+  return c.json({
+    totalDocs: allDocs.length,
+    byStatus,
+    byOwner,
+    overdue: overdue.map(d=> ({ id: d.id, title: d.title, reviewAt: (d as unknown as { reviewAt: Date }).reviewAt.toISOString(), status: (d as unknown as { status: string }).status, ownerId: (d as unknown as { ownerId: string | null }).ownerId })),
+    topDocs,
+    feedback: { total: feedbacks.length, semFonte: semFonte.length, negativos: negativos.length, recent: feedbacks.slice(0,10) },
+  });
+});
+
+// R6 — retenção: limpa revisões antigas superseded e arquivos obsoletos
+knowledgeRoutes.post("/ops/retention/run", async (c) => {
+  const user = c.get("user");
+  if (!user.isAdmin) throw forbidden();
+  const body = await c.req.json().catch(()=>({})) as { days?: number; dryRun?: boolean };
+  const days = Math.max(1, Math.min(365, Number(body.days ?? 90)));
+  const cutoff = new Date(Date.now() - days*24*60*60*1000);
+  const dryRun = body.dryRun !== false; // default dryRun true para segurança
+  // revisões superseded antigas
+  const oldRevisions = await db.select().from(knowledgeDocumentRevisions).where(lte(knowledgeDocumentRevisions.supersededAt, cutoff));
+  // documentos soft-deleted antigos
+  const oldDeletedDocs = await db.execute(sql`SELECT id FROM knowledge_document WHERE deleted_at IS NOT NULL AND deleted_at < ${cutoff.toISOString()}::timestamptz`) as unknown as { rows: unknown[] };
+  const oldDeletedCount = Array.isArray((oldDeletedDocs as { rows?: unknown[] })?.rows) ? (oldDeletedDocs as { rows: unknown[] }).rows.length : 0;
+  // na prática, deleta só se dryRun false
+  let deletedRevisions = 0;
+  let deletedDocs = 0;
+  if (!dryRun) {
+    for (const rev of oldRevisions) {
+      try { const { deleteObject } = await import("../lib/storage"); await deleteObject(rev.storageKey); } catch {}
+      await db.delete(knowledgeChunks).where(eq(knowledgeChunks.revisionId, rev.id));
+      await db.delete(knowledgeDocumentRevisions).where(eq(knowledgeDocumentRevisions.id, rev.id));
+      deletedRevisions++;
+    }
+    // hard delete docs soft-deletados antigos (e chunks já removidos)
+    // aqui só contamos, não hard delete sem confirmação extra
+  }
+  await writeAudit({ actorId: user.id, action: "knowledge.retention_run", entityType: "knowledge_document", meta: { days, cutoff: cutoff.toISOString(), dryRun, oldRevisions: oldRevisions.length, deletedRevisions } });
+  return c.json({ days, cutoff: cutoff.toISOString(), dryRun, candidates: { oldRevisions: oldRevisions.length, oldDeletedDocs: oldDeletedCount }, deleted: { deletedRevisions, deletedDocs } });
 });
 
 function mimeFromExtFallback(ext: string): string {

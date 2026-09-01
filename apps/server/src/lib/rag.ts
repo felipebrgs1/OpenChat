@@ -189,7 +189,7 @@ export async function retrieveKnowledgeChunksWithTelemetry(
         kc.page as page,
         kc.embedding <=> ${literal}::halfvec(2560) as distance
       FROM knowledge_chunk kc
-      JOIN knowledge_document kd ON kd.id = kc.document_id AND kd.deleted_at IS NULL
+      JOIN knowledge_document kd ON kd.id = kc.document_id AND kd.deleted_at IS NULL AND kd.status = 'published'
       JOIN knowledge_collection kcol ON kcol.id = kc.collection_id AND kcol.deleted_at IS NULL
       WHERE ${perm}
       ORDER BY kc.embedding <=> ${literal}::halfvec(2560) ASC
@@ -220,7 +220,7 @@ export async function retrieveKnowledgeChunksWithTelemetry(
         kc.page as page,
         ts_rank(kc.search_vector, websearch_to_tsquery('portuguese', ${tsQuery})) as ts_rank
       FROM knowledge_chunk kc
-      JOIN knowledge_document kd ON kd.id = kc.document_id AND kd.deleted_at IS NULL
+      JOIN knowledge_document kd ON kd.id = kc.document_id AND kd.deleted_at IS NULL AND kd.status = 'published'
       JOIN knowledge_collection kcol ON kcol.id = kc.collection_id AND kcol.deleted_at IS NULL
       WHERE ${perm}
         AND kc.search_vector @@ websearch_to_tsquery('portuguese', ${tsQuery})
@@ -242,7 +242,7 @@ export async function retrieveKnowledgeChunksWithTelemetry(
           kc.page as page,
           0.1 as ts_rank
         FROM knowledge_chunk kc
-        JOIN knowledge_document kd ON kd.id = kc.document_id AND kd.deleted_at IS NULL
+        JOIN knowledge_document kd ON kd.id = kc.document_id AND kd.deleted_at IS NULL AND kd.status = 'published'
         JOIN knowledge_collection kcol ON kcol.id = kc.collection_id AND kcol.deleted_at IS NULL
         WHERE ${perm}
           AND (kc.content ILIKE ${`%${tsQuery}%`} OR kc.heading ILIKE ${`%${tsQuery}%`})

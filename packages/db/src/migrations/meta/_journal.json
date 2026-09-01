@@ -57,6 +57,13 @@
       "when": 1788284479566,
       "tag": "0007_halfvec_2560",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788284479567,
+      "tag": "0008_ops_r6",
+      "breakpoints": true
     }
   ]
 }
