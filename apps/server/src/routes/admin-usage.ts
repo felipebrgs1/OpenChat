@@ -126,10 +126,11 @@ adminUsageRoutes.get("/", async (c) => {
     budgetUsd: row.budget ?? null,
   }));
 
+  const total = totalRow as unknown as { messages: string; promptTokens: string; completionTokens: string; costUsd: string; credits: string };
   return c.json({
     since: since.toISOString(),
     until: new Date().toISOString(),
-    total: toBucket(totalRow!),
+    total: toBucket({ key: null, label: null, ...total }),
     byUser: userRows.map((row) => toBucket({ ...row, label: row.label ?? row.email ?? row.key })),
     byRole: roleBudget.map((row) => ({ ...row, label: row.label ?? "sem cargo" })),
     byModel: modelRows.map((row) => toBucket({ ...row, label: row.key ?? "—" })),

@@ -14,6 +14,7 @@ import { assertBudgets } from "../lib/budget";
 import { creditsFromUsd, deductCredits } from "../lib/credits";
 import { buildKnowledgeBlock } from "../lib/knowledge";
 import { maybeLearnFromTurn } from "../lib/memory";
+import { buildRagKnowledgeBlock, formatCitations, retrieveKnowledgeChunks } from "../lib/rag";
 import { assertSelectableModel, effectiveDefaultModel, loadOrgSettings } from "../lib/org";
 import { parseBody } from "../lib/parse";
 import { assemblePrompt } from "../lib/prompt";
@@ -214,11 +215,27 @@ conversationRoutes.post("/:id/messages", async (c) => {
     memorySummary: string | null;
     autoLearn: boolean | null;
   };
+  // RAG: retrieval top-6 filtrado por cargo; fallback para bloco legado se RAG vazio
+  let ragChunks: Awaited<ReturnType<typeof retrieveKnowledgeChunks>> = [];
+  let knowledgeBlock = "";
+  if (user.roleId) {
+    try {
+      ragChunks = await retrieveKnowledgeChunks(content, user.roleId, 6);
+    } catch {
+      ragChunks = [];
+    }
+    if (ragChunks.length > 0) {
+      knowledgeBlock = buildRagKnowledgeBlock(ragChunks);
+    } else {
+      knowledgeBlock = await buildKnowledgeBlock(user.roleId);
+    }
+  }
+
   const assembled = assemblePrompt({
     globalSystemPrompt: settings.globalSystemPrompt,
     role,
     history: history.filter((row) => row.id !== assistantMessage.id),
-    knowledgeBlock: user.roleId ? await buildKnowledgeBlock(user.roleId) : "",
+    knowledgeBlock,
     user: {
       personalPrompt: freshUser?.personalPrompt ?? null,
       memorySummary: freshUser?.memorySummary ?? null,
@@ -298,6 +315,15 @@ conversationRoutes.post("/:id/messages", async (c) => {
           });
         },
       });
+
+      // RAG citação: append fontes ao final se houve retrieval
+      if (ragChunks.length > 0) {
+        const citation = formatCitations(ragChunks);
+        if (citation && !full.includes("**Fontes:")) {
+          full += citation;
+          await stream.writeSSE({ event: "delta", data: JSON.stringify({ text: citation }) });
+        }
+      }
 
       const latencyMs = Date.now() - startedAt;
       const completionTokens = usage.completionTokens ?? 0;

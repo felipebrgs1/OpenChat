@@ -56,7 +56,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:18
+    image: pgvector/pgvector:0.8.1-pg18
     container_name: nexo-postgres
     environment:
       POSTGRES_DB: nexo

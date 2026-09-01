@@ -4,12 +4,14 @@ import {
   patchKnowledgeCollectionBodySchema,
   patchKnowledgeDocumentBodySchema,
 } from "@nexo/contracts";
-import { db, knowledgeCollections, knowledgeDocuments, knowledgeRoles } from "@nexo/db";
+import { db, knowledgeChunks, knowledgeCollections, knowledgeDocuments, knowledgeRoles } from "@nexo/db";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { writeAudit } from "../lib/audit";
 import { forbidden, notFound } from "../lib/errors";
+import { chunkMarkdown } from "../lib/chunk";
+import { embedTexts } from "../lib/embeddings";
 import {
   loadAllCollections,
   loadCollectionsForRole,
@@ -80,6 +82,69 @@ async function guardCollectionRead(user: AuthUser, collectionId: string) {
     }
   }
   return row;
+}
+
+async function reindexDocument(documentId: string, collectionId: string, bodyMd: string) {
+  // remove antigos
+  await db.delete(knowledgeChunks).where(eq(knowledgeChunks.documentId, documentId));
+  const chunks = chunkMarkdown(bodyMd);
+  if (chunks.length === 0) return;
+  try {
+    const { embeddings } = await embedTexts(chunks);
+    const rows = chunks.map((content, i) => ({
+      documentId,
+      collectionId,
+      chunkIndex: i,
+      content,
+      embedding: embeddings[i] ?? null,
+    }));
+    // insere em batches para não estourar param limit
+    for (let i = 0; i < rows.length; i += 64) {
+      const batch = rows.slice(i, i + 64);
+      await db.insert(knowledgeChunks).values(batch);
+    }
+  } catch (e) {
+    console.warn(`reindex falhou para doc ${documentId}:`, e instanceof Error ? e.message : String(e));
+    // fallback: salva chunks sem embedding para não bloquear criação
+    try {
+      const fallbackRows = chunks.map((content, i) => ({
+        documentId,
+        collectionId,
+        chunkIndex: i,
+        content,
+      }));
+      for (let i = 0; i < fallbackRows.length; i += 64) {
+        await db.insert(knowledgeChunks).values(fallbackRows.slice(i, i + 64) as never);
+      }
+    } catch {}
+  }
+}
+
+async function extractTextFromFile(file: File): Promise<{ text: string; filename: string; mime: string }> {
+  const filename = file.name;
+  const mime = file.type || "application/octet-stream";
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".pdf")) {
+    try {
+      const buf = Buffer.from(await file.arrayBuffer());
+      // lazy import para não quebrar se pdf-parse não estiver instalado
+      // @ts-ignore
+      const mod: unknown = await import("pdf-parse").catch(() => null);
+      const pdfParse = (mod as { default?: (b: Buffer) => Promise<{ text: string }> })?.default;
+      if (pdfParse) {
+        const parsed = await pdfParse(buf);
+        return { text: parsed.text, filename, mime: mime || "application/pdf" };
+      }
+      // fallback: tenta extrair como texto simples
+      return { text: buf.toString("utf-8").slice(0, 200000), filename, mime };
+    } catch {
+      const buf = Buffer.from(await file.arrayBuffer());
+      return { text: buf.toString("utf-8").slice(0, 200000), filename, mime };
+    }
+  }
+  // txt/md
+  const text = await file.text();
+  return { text, filename, mime: mime || "text/markdown" };
 }
 
 // ---------- logado ----------
@@ -182,12 +247,65 @@ knowledgeRoutes.post("/:id/documents", async (c) => {
     .set({ updatedAt: new Date() })
     .where(eq(knowledgeCollections.id, id));
 
+  // RAG: indexa chunks em background (await para garantir consistência)
+  await reindexDocument(row.id, collection.id, body.bodyMd);
+
   await writeAudit({
     actorId: user.id,
     action: "knowledge.publish",
     entityType: "knowledge_document",
     entityId: row.id,
     meta: { collectionId: id, title: body.title },
+  });
+
+  return c.json(toDocument(row));
+});
+
+// upload txt/md/pdf -> extrai texto e cria document
+knowledgeRoutes.post("/:id/upload", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const collection = await guardCollectionRead(user, id);
+  const form = await c.req.formData();
+  const file = form.get("file") as File | null;
+  if (!file || typeof file === "string") {
+    throw forbidden("Envie um arquivo em 'file'.");
+  }
+  // valida extensão
+  const lower = file.name.toLowerCase();
+  const allowed = lower.endsWith(".md") || lower.endsWith(".txt") || lower.endsWith(".pdf");
+  if (!allowed) {
+    throw forbidden("Formato não suportado. Use md, txt ou pdf.");
+  }
+  const titleForm = form.get("title");
+  const { text, filename, mime } = await extractTextFromFile(file);
+  if (!text.trim()) throw forbidden("Arquivo vazio ou ilegível.");
+  const title = (typeof titleForm === "string" && titleForm.trim()) || filename.replace(/\.[^.]+$/, "") || "Documento";
+
+  const [row] = await db
+    .insert(knowledgeDocuments)
+    .values({
+      collectionId: collection.id,
+      title,
+      bodyMd: text.slice(0, 500000),
+      sourceType: lower.endsWith(".pdf") ? "upload" : "markdown",
+      filename,
+      mime,
+      checksum: checksum(text),
+      createdBy: user.id,
+    })
+    .returning();
+  if (!row) throw new Error("failed to create document from upload");
+
+  await db.update(knowledgeCollections).set({ updatedAt: new Date() }).where(eq(knowledgeCollections.id, id));
+  await reindexDocument(row.id, collection.id, row.bodyMd);
+
+  await writeAudit({
+    actorId: user.id,
+    action: "knowledge.publish",
+    entityType: "knowledge_document",
+    entityId: row.id,
+    meta: { collectionId: id, title, filename, upload: true },
   });
 
   return c.json(toDocument(row));
@@ -223,6 +341,10 @@ knowledgeRoutes.patch("/documents/:id", async (c) => {
     .set({ updatedAt: new Date() })
     .where(eq(knowledgeCollections.id, row.collectionId));
 
+  if (body.bodyMd !== undefined) {
+    await reindexDocument(row.id, row.collectionId, row.bodyMd);
+  }
+
   await writeAudit({
     actorId: user.id,
     action: "knowledge.document_update",
@@ -248,6 +370,8 @@ knowledgeRoutes.delete("/documents/:id", async (c) => {
     .update(knowledgeDocuments)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
     .where(eq(knowledgeDocuments.id, id));
+
+  await db.delete(knowledgeChunks).where(eq(knowledgeChunks.documentId, id));
 
   await db
     .update(knowledgeCollections)

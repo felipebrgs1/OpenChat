@@ -141,12 +141,21 @@ Fora: export CSV, retenção de conversas, rate limit persistido (lote 8).
 
 ## Lote 6 — RAG
 
-Status: bloqueado por 5
+Status: feito — pgvector 0.8.1 + Postgres 18 + OpenRouter embeddings
 
-- [ ] chunk + embedding + pgvector
-- [ ] top-k filtrado por cargo
-- [ ] citação
-- [ ] upload md/txt/pdf
+- [x] `pgvector/pgvector:0.8.1-pg18` no docker-compose (Postgres 18 mais recente)
+- [x] `knowledge_chunk` com `embedding vector(1536)` + HNSW `vector_cosine_ops (m=16, ef_construction=64)` + migration `0001_vector_rag`
+- [x] `lib/embeddings.ts` — `embedTexts` via `POST /embeddings` OpenRouter (`openai/text-embedding-3-small`, batch 64)
+- [x] `lib/chunk.ts` — chunk 600 tokens (~2400 chars) overlap 80 tokens (~320 chars), quebra em `\n\n`
+- [x] `lib/rag.ts` — `retrieveKnowledgeChunks(query, roleId, 6)` com `embedding <=> query` + filtro `visibility=all OR knowledge_role` + `deleted_at`, `buildRagKnowledgeBlock` + `formatCitations`
+- [x] `routes/knowledge.ts` — `reindexDocument` (delete+chunk+embed+insert) em POST/PATCH/DELETE + `POST /:id/upload` multipart txt/md/pdf (pdf-parse) com sourceType upload
+- [x] `routes/conversations.ts` — retrieval RAG antes do `assemblePrompt`, fallback para `buildKnowledgeBlock` legado se RAG vazio, append `**Fontes:**` no stream e persistência
+- [x] `.env.example` com `EMBEDDING_MODEL` + `OPENROUTER_BASE_URL`
+- [x] `pdf-parse` em `apps/server`
+
+Aceite:
+- [x] collection com 30 páginas responde com citação (RAG top-6 evita estourar contexto)
+- [x] cargo sem acesso à collection não recupera o chunk (filtro por knowledge_role)
 
 ## Lote 7 — Tools / MCP
 
