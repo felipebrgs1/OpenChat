@@ -36,7 +36,7 @@ export async function listOpenRouterModels(baseUrl: string): Promise<OpenRouterM
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "HTTP-Referer": process.env.OPENROUTER_HTTP_REFERER ?? "http://localhost:5173",
-        "X-Title": process.env.OPENROUTER_APP_TITLE ?? "Nexo",
+        "X-Title": process.env.OPENROUTER_APP_TITLE ?? "Oráculo",
       },
       signal: controller.signal,
     });

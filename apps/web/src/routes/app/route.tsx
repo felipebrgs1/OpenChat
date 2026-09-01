@@ -1,5 +1,6 @@
 import type { MeResponse } from "@nexo/contracts";
 import { Button } from "@nexo/ui/components/button";
+import { OraculoBadge } from "@nexo/ui/components/logo";
 import { cn } from "@nexo/ui/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
@@ -54,12 +55,10 @@ function AppShellInner() {
     <div className="grid h-svh grid-cols-[272px_1fr] bg-background">
       <aside className="flex min-h-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
         <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
-          <span className="inline-flex size-8 items-center justify-center rounded-xl bg-foreground text-[13px] font-semibold text-background">
-            N
-          </span>
+          <OraculoBadge size="md" />
           <div className="min-w-0">
             <Link to="/app" className="block text-[15px] font-semibold tracking-tight">
-              Nexo
+              Oráculo
             </Link>
             <p className="truncate text-[11px] text-sidebar-foreground/55">
               {roleName ?? "Assistente interno"}

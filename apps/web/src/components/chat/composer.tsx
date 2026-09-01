@@ -10,7 +10,7 @@ export function ChatComposer({
   onStop,
   streaming = false,
   disabled = false,
-  placeholder = "Pergunte ao Nexo",
+  placeholder = "Pergunte ao Oráculo",
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -84,7 +84,7 @@ export function ChatComposer({
         </div>
       </div>
       <p className="mt-2 text-center text-[11px] text-muted-foreground">
-        O Nexo pode errar. Confira procedimento interno antes de agir.
+        O Oráculo pode errar. Confira procedimento interno antes de agir.
       </p>
     </form>
   );

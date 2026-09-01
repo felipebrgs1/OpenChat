@@ -51,7 +51,7 @@ export async function seed(db = defaultDb) {
 
   const settings = (await db.select().from(organizationSettings).limit(1))[0];
   const settingsValues = {
-    name: "Nexo",
+    name: "Oráculo",
     globalSystemPrompt: GLOBAL_SYSTEM_PROMPT,
     defaultModel: "z-ai/glm-5.3-flash",
     fallbackModel: "z-ai/glm-5.3-flash",

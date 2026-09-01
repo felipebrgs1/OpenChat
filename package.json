@@ -1,5 +1,5 @@
 {
-  "name": "nexo",
+  "name": "oraculo",
   "private": true,
   "workspaces": {
     "packages": [

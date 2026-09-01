@@ -91,7 +91,7 @@ async function openRouterRerank(query: string, chunks: RagChunk[]): Promise<Rera
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
         "HTTP-Referer": process.env.OPENROUTER_HTTP_REFERER ?? "http://localhost:5173",
-        "X-Title": process.env.OPENROUTER_APP_TITLE ?? "Nexo",
+        "X-Title": process.env.OPENROUTER_APP_TITLE ?? "Oráculo",
       },
       body: JSON.stringify({ model, query, documents: docs }),
       signal: AbortSignal.timeout(8000),

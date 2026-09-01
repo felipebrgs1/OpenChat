@@ -32,7 +32,7 @@ export async function embedTexts(texts: string[]): Promise<EmbedResult> {
   const baseUrl = embeddingBaseUrl();
   const url = `${baseUrl}/embeddings`;
   const referer = process.env.OPENROUTER_HTTP_REFERER ?? "http://localhost:5173";
-  const title = process.env.OPENROUTER_APP_TITLE ?? "Nexo";
+  const title = process.env.OPENROUTER_APP_TITLE ?? "Oráculo";
 
   const res = await fetch(url, {
     method: "POST",

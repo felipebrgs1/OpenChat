@@ -21,8 +21,12 @@ export interface RouterAppContext {}
 export const Route = createRootRouteWithContext<RouterAppContext>()({
   component: RootComponent,
   head: () => ({
-    meta: [{ title: "Nexo" }, { name: "description", content: "Assistente interno" }],
-    links: [{ rel: "icon", href: "/favicon.ico" }],
+    meta: [{ title: "Oráculo" }, { name: "description", content: "Assistente interno inteligente" }],
+    links: [
+      { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
+      { rel: "alternate icon", href: "/favicon.ico" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+    ],
   }),
 });
 
@@ -34,7 +38,7 @@ function RootComponent() {
         attribute="class"
         defaultTheme="light"
         disableTransitionOnChange
-        storageKey="nexo-theme"
+        storageKey="oraculo-theme"
       >
         <TooltipProvider>
           <AuthProvider>

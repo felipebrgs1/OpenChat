@@ -1,6 +1,7 @@
 import { Button } from "@nexo/ui/components/button";
 import { Input } from "@nexo/ui/components/input";
 import { Label } from "@nexo/ui/components/label";
+import { OraculoBadge } from "@nexo/ui/components/logo";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -40,12 +41,10 @@ function InvitePage() {
         }}
       >
         <div className="flex items-center gap-3">
-          <span className="inline-flex size-10 items-center justify-center rounded-2xl bg-foreground text-sm font-semibold text-background">
-            N
-          </span>
+          <OraculoBadge size="lg" />
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Aceitar convite</h1>
-            <p className="text-sm text-muted-foreground">Defina nome e senha para entrar.</p>
+            <p className="text-sm text-muted-foreground">Defina nome e senha para entrar no Oráculo.</p>
           </div>
         </div>
         <div className="space-y-1.5">

@@ -210,7 +210,7 @@ export async function streamNexoTurn(input: StreamNexoTurnInput): Promise<NexoTu
     retry: { enabled: true, maxRetries: 2 },
   });
   const referer = process.env.OPENROUTER_HTTP_REFERER ?? "http://localhost:5173";
-  const title = process.env.OPENROUTER_APP_TITLE ?? "Nexo";
+  const title = process.env.OPENROUTER_APP_TITLE ?? "Oráculo";
 
   const loader = new DefaultResourceLoader({
     cwd: dir,
