@@ -11,6 +11,7 @@ import { streamSSE } from "hono/streaming";
 import { notFound } from "../lib/errors";
 import { publicLlmError, streamNexoTurn } from "../lib/pi-harness";
 import { creditsFromUsd, deductCredits, getUserBalance } from "../lib/credits";
+import { buildKnowledgeBlock } from "../lib/knowledge";
 import { maybeLearnFromTurn } from "../lib/memory";
 import { assertSelectableModel, effectiveDefaultModel, loadOrgSettings } from "../lib/org";
 import { parseBody } from "../lib/parse";
@@ -216,11 +217,25 @@ conversationRoutes.post("/:id/messages", async (c) => {
     globalSystemPrompt: settings.globalSystemPrompt,
     role,
     history: history.filter((row) => row.id !== assistantMessage.id),
+    knowledgeBlock: user.roleId ? await buildKnowledgeBlock(user.roleId) : "",
     user: {
       personalPrompt: freshUser?.personalPrompt ?? null,
       memorySummary: freshUser?.memorySummary ?? null,
     },
   });
+
+  if (process.env.DEBUG_PROMPT?.trim() === "1") {
+    console.log(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        level: "debug",
+        promptDebug: true,
+        conversationId: convo.id,
+        userId: user.id,
+        system: assembled.system,
+      }),
+    );
+  }
 
   return streamSSE(c, async (stream) => {
     await stream.writeSSE({

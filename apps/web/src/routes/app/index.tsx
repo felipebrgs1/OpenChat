@@ -1,4 +1,4 @@
-import type { Conversation, MeResponse } from "@nexo/contracts";
+import type { Conversation, KnowledgeCollectionSummary, MeResponse } from "@nexo/contracts";
 import { Button } from "@nexo/ui/components/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -24,6 +24,11 @@ function HomePage() {
     queryKey: ["conversations"],
     queryFn: () => api<{ conversations: Conversation[] }>("/api/conversations"),
     retry: false,
+  });
+  const knowledge = useQuery({
+    queryKey: ["knowledge"],
+    queryFn: () =>
+      api<{ collections: KnowledgeCollectionSummary[] }>("/api/knowledge"),
   });
   const onboard = useMutation({
     mutationFn: () =>
@@ -125,6 +130,34 @@ function HomePage() {
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <h2 className="mb-3 text-sm font-medium text-muted-foreground">
+            Bases que você pode consultar
+          </h2>
+          {(knowledge.data?.collections ?? []).length === 0 ? (
+            <p className="text-[13px] leading-6 text-muted-foreground">
+              Seu cargo ainda não tem base; as respostas serão genéricas.
+            </p>
+          ) : (
+            <ul className="grid gap-2 sm:grid-cols-2">
+              {(knowledge.data?.collections ?? []).map((collection) => (
+                <li key={collection.id}>
+                  <Link
+                    to="/app/knowledge/$collectionId"
+                    params={{ collectionId: collection.id }}
+                    className="block rounded-2xl border border-border/80 px-4 py-3 text-sm transition-colors hover:bg-muted/60"
+                  >
+                    <span className="block font-medium">{collection.name}</span>
+                    <span className="mt-0.5 block text-[13px] text-muted-foreground">
+                      {collection.documentCount} doc(s)
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <div>

@@ -3,7 +3,7 @@ import { Button } from "@nexo/ui/components/button";
 import { cn } from "@nexo/ui/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
-import { MessageSquarePlus } from "lucide-react";
+import { BookOpenText, MessageSquarePlus } from "lucide-react";
 
 import { ConversationList } from "@/components/chat/conversation-list";
 import { ModelSelect } from "@/components/chat/model-select";
@@ -75,6 +75,17 @@ function AppShellInner() {
               <MessageSquarePlus className="size-4" />
               Nova conversa
             </Button>
+          </Link>
+          <Link
+            to="/app/knowledge"
+            className={cn(
+              "mt-1 flex h-8 items-center gap-2 rounded-xl px-2 text-[13px] text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+              pathname.startsWith("/app/knowledge") &&
+                "bg-sidebar-accent text-sidebar-foreground",
+            )}
+          >
+            <BookOpenText className="size-4" />
+            Bases
           </Link>
         </div>
         <div className="min-h-0 flex-1">

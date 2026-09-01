@@ -6,6 +6,7 @@ import {
   numeric,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -216,6 +217,61 @@ export const userMemories = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("user_memory_user_created_idx").on(table.userId, table.createdAt)],
+);
+
+export const knowledgeVisibilityEnum = pgEnum("knowledge_visibility", ["all", "by_role"]);
+
+export const knowledgeCollections = pgTable(
+  "knowledge_collection",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    visibility: knowledgeVisibilityEnum("visibility").notNull().default("by_role"),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [uniqueIndex("knowledge_collection_slug_unique").on(table.slug)],
+);
+
+export const knowledgeRoles = pgTable(
+  "knowledge_role",
+  {
+    collectionId: uuid("collection_id")
+      .notNull()
+      .references(() => knowledgeCollections.id, { onDelete: "cascade" }),
+    roleId: uuid("role_id")
+      .notNull()
+      .references(() => roles.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.collectionId, table.roleId] }),
+    index("knowledge_role_role_id_idx").on(table.roleId),
+  ],
+);
+
+export const knowledgeDocuments = pgTable(
+  "knowledge_document",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    collectionId: uuid("collection_id")
+      .notNull()
+      .references(() => knowledgeCollections.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    sourceType: text("source_type").notNull().default("markdown"),
+    filename: text("filename"),
+    mime: text("mime"),
+    bodyMd: text("body_md").notNull(),
+    checksum: text("checksum"),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [index("knowledge_document_collection_idx").on(table.collectionId)],
 );
 
 export const auditLogs = pgTable("audit_log", {

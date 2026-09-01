@@ -16,6 +16,7 @@ export function assemblePrompt(input: {
   globalSystemPrompt: string;
   role: RoleRow;
   history: MessageRow[];
+  knowledgeBlock?: string;
   user?: { personalPrompt?: string | null; memorySummary?: string | null };
 }) {
   const userBlock = (() => {
@@ -29,6 +30,8 @@ export function assemblePrompt(input: {
     return parts.length ? parts.join("\n\n") + "\n\n" : "";
   })();
 
+  const knowledgeSuffix = input.knowledgeBlock ? `\n\n${input.knowledgeBlock}` : "";
+
   const system = `[GLOBAL SYSTEM]
 ${input.globalSystemPrompt}
 
@@ -36,7 +39,7 @@ ${input.globalSystemPrompt}
 ${input.role.systemPrompt}
 
 ${userBlock}[REGRAS DE SEGURANÇA]
-${SAFETY_RULES}`;
+${SAFETY_RULES}${knowledgeSuffix}`;
 
   const historyBudget = 8000;
   const usable = input.history.filter(

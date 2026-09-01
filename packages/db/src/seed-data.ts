@@ -235,3 +235,114 @@ Marque “entendi meu cargo” quando o texto abaixo fizer sentido. Chat livre v
     ),
   },
 ];
+
+export type KnowledgeDocSeed = { title: string; bodyMd: string };
+
+export type KnowledgeCollectionSeed = {
+  slug: string;
+  name: string;
+  description: string;
+  visibility: "all" | "by_role";
+  roleSlugs: string[];
+  documents: KnowledgeDocSeed[];
+};
+
+export const KNOWLEDGE_SEEDS: KnowledgeCollectionSeed[] = [
+  {
+    slug: "como-cobramos",
+    name: "Como a Voz Educa cobra",
+    description: "Regras de cobrança, multa, juros e renegociação.",
+    visibility: "by_role",
+    roleSlugs: ["cobranca", "suporte", "diretoria"],
+    documents: [
+      {
+        title: "Regras de cobrança (stub)",
+        bodyMd: `# Como a Voz Educa cobra
+
+> Documento stub. O time de cobrança deve revisar com os valores oficiais antes de usar em produção.
+
+1. Mensalidade vence todo dia 10.
+2. Após o vencimento, multa de 2% e juros proporcional de 1% ao mês (STUB — confirmar valor oficial).
+3. Renegociação só em até 2 parcelas.
+4. Nunca prometer desconto fora da política oficial.`,
+      },
+    ],
+  },
+  {
+    slug: "whatsapp-responsavel",
+    name: "Script de WhatsApp responsável",
+    description: "Tom e limites no contato com responsáveis.",
+    visibility: "by_role",
+    roleSlugs: ["suporte", "cobranca"],
+    documents: [
+      {
+        title: "Script de WhatsApp (stub)",
+        bodyMd: `# Script de WhatsApp responsável
+
+> Documento stub. Revisar com o time de suporte.
+
+- Cumprimentar, identificar-se e confirmar com quem fala.
+- Nunca discutir nem elevar o tom.
+- Se o responsável pedir dado de terceiro, não compartilhar.
+- Encerrar com próximo passo claro.`,
+      },
+    ],
+  },
+  {
+    slug: "o-que-comercial-promete",
+    name: "O que o comercial pode prometer",
+    description: "Limites de argumentação e promessa comercial.",
+    visibility: "by_role",
+    roleSlugs: ["comercial"],
+    documents: [
+      {
+        title: "Limites do comercial (stub)",
+        bodyMd: `# O que o comercial pode prometer
+
+> Documento stub. Revisar com o time comercial.
+
+- Pode prometer: onboarding assistido, suporte em horário comercial.
+- Não pode prometer: resultado de aprovação, desconto fora da tabela, prazo de integração específico.`,
+      },
+    ],
+  },
+  {
+    slug: "stack-ambiente",
+    name: "Stack e como subir o ambiente",
+    description: "Visão técnica e setup local.",
+    visibility: "by_role",
+    roleSlugs: ["produto", "admin"],
+    documents: [
+      {
+        title: "Stack e ambiente local (stub)",
+        bodyMd: `# Stack e como subir o ambiente
+
+> Documento stub. Revisar com o time de produto.
+
+- Monorepo: Turborepo + Bun. Web em Vite/React, API em Hono.
+- Postgres via docker compose.
+- Comandos: \`bun install\`, \`bun run db:start\`, \`bun run dev\`.`,
+      },
+    ],
+  },
+  {
+    slug: "organograma",
+    name: "Organograma e quem perguntar o quê",
+    description: "Mapa da empresa para todos os cargos.",
+    visibility: "all",
+    roleSlugs: [],
+    documents: [
+      {
+        title: "Organograma (stub)",
+        bodyMd: `# Organograma e quem perguntar o quê
+
+> Documento stub. Preencher com nomes reais.
+
+- Cobrança: regras financeiras, inadimplência, renegociação.
+- Comercial: preços, planos, promessas permitidas.
+- Suporte: problemas de uso, WhatsApp, Wix.
+- Produto/Dev: bugs, ambiente, decisões técnicas.`,
+      },
+    ],
+  },
+];

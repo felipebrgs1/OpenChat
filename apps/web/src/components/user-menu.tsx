@@ -11,6 +11,7 @@ import {
 } from "@nexo/ui/components/dropdown-menu";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  BookOpenText,
   ChevronsUpDown,
   Cpu,
   LogOut,
@@ -95,6 +96,13 @@ export function UserMenu({ user, roleName }: { user: PublicUser | null; roleName
               >
                 <Cpu className="size-4" />
                 Modelos
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="rounded-lg"
+                onClick={() => void navigate({ to: "/app/admin/knowledge" })}
+              >
+                <BookOpenText className="size-4" />
+                Bases
               </DropdownMenuItem>
             </>
           ) : null}

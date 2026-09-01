@@ -2,7 +2,7 @@
 
 Fonte: `NEXO.md`. Este arquivo é o checklist de execução.
 
-Status: **lote 3 feito**. Chat usa pi headless; UI ChatGPT intacta.
+Status: **lote 4 feito**. Knowledge por cargo sem vetor; injeção no system prompt com cap de 4k tokens.
 
 ---
 
@@ -88,14 +88,24 @@ Notas técnicas:
 
 ## Lote 4 — Knowledge por cargo (sem vetor)
 
-Status: bloqueado por 3
+Status: feito
 
-- [ ] collections + documents + vínculo cargo
-- [ ] injeção no prompt com teto de tokens (reusar `before_agent_start` do harness)
-- [ ] leitura para o user, CRUD admin
-- [ ] seed de 5 docs mínimos
+- [x] `knowledge_collection` / `knowledge_document` / `knowledge_role` no schema (soft delete em collection e document, migration `0000_petite_risque`)
+- [x] contratos Zod (`KnowledgeCollectionSummary/Detail`, `KnowledgeDocument`, bodies de create/patch)
+- [x] `apps/server/src/lib/knowledge.ts` — `loadCollectionsForRole` (visibilidade `all` ou vínculo por cargo) + `buildKnowledgeBlock` (docs inteiros, ordem `updated_at desc`, cap 4k tokens)
+- [x] `assemblePrompt` recebe `knowledgeBlock` → bloco `[CONHECIMENTO]` depois das regras de segurança; `DEBUG_PROMPT=1` loga o prompt montado
+- [x] rotas: `GET /api/knowledge`, `GET /api/knowledge/:id` (logado, filtra por cargo); admin: `POST /api/knowledge`, `PATCH /api/knowledge/:id` (roleIds), `POST /:id/documents`, `PATCH/DELETE /documents/:id` (soft) + audit_log
+- [x] web: `/app/knowledge` (leitura), `/app/knowledge/$collectionId`, `/app/admin/knowledge` (CRUD), link "Bases" na sidebar e no menu admin, home lista as bases
+- [x] seed de 5 docs mínimos (cobrança, whatsapp, comercial, stack, organograma)
 
-Aceite: doc de cobrança invisível para comercial.
+Aceite:
+
+- [x] doc de cobrança invisível para comercial (`knowledge.test.ts`, 5 testes)
+- [x] base `visibility: all` aparece para qualquer cargo
+- [x] `[CONHECIMENTO]` montado com cap de tokens
+- [x] `bun test` server: 28 pass
+
+Fora: embedding, pgvector, upload PDF, busca semântica (lote 6).
 
 ## Lote 5 — Admin e uso
 

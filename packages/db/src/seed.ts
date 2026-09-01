@@ -1,8 +1,16 @@
 import { eq } from "drizzle-orm";
 
 import { db as defaultDb } from "./index";
-import { organizationSettings, roleStarterPrompts, roles, users } from "./schema";
-import { GLOBAL_SYSTEM_PROMPT, ROLE_SEEDS } from "./seed-data";
+import {
+  knowledgeCollections,
+  knowledgeDocuments,
+  knowledgeRoles,
+  organizationSettings,
+  roleStarterPrompts,
+  roles,
+  users,
+} from "./schema";
+import { GLOBAL_SYSTEM_PROMPT, KNOWLEDGE_SEEDS, ROLE_SEEDS } from "./seed-data";
 
 export async function seed(db = defaultDb) {
   const roleIds = new Map<string, string>();
@@ -99,6 +107,59 @@ export async function seed(db = defaultDb) {
     const bal = (u as unknown as { creditBalance: string | null }).creditBalance;
     if (bal === null || bal === undefined) {
       await db.update(users).set({ creditBalance: "1000.0000" }).where(eq(users.id, u.id));
+    }
+  }
+
+  // lote 4: bases de conhecimento mínimas por cargo
+  for (const collectionSeed of KNOWLEDGE_SEEDS) {
+    const existingCollection = (
+      await db
+        .select()
+        .from(knowledgeCollections)
+        .where(eq(knowledgeCollections.slug, collectionSeed.slug))
+    )[0];
+    const collection = existingCollection
+      ? existingCollection
+      : (await db
+          .insert(knowledgeCollections)
+          .values({
+            slug: collectionSeed.slug,
+            name: collectionSeed.name,
+            description: collectionSeed.description,
+            visibility: collectionSeed.visibility,
+          })
+          .returning())[0];
+    if (!collection) {
+      throw new Error(`Falha ao gravar base ${collectionSeed.slug}`);
+    }
+
+    await db.delete(knowledgeRoles).where(eq(knowledgeRoles.collectionId, collection.id));
+    const linkedRoleIds = collectionSeed.roleSlugs
+      .map((slug) => roleIds.get(slug))
+      .filter((id): id is string => Boolean(id));
+    if (linkedRoleIds.length) {
+      await db
+        .insert(knowledgeRoles)
+        .values(linkedRoleIds.map((roleId) => ({ collectionId: collection.id, roleId })));
+    }
+
+    for (const docSeed of collectionSeed.documents) {
+      const existingDoc = (
+        await db
+          .select()
+          .from(knowledgeDocuments)
+          .where(eq(knowledgeDocuments.collectionId, collection.id))
+      ).find((doc) => doc.title === docSeed.title);
+      if (existingDoc) {
+        continue;
+      }
+      await db.insert(knowledgeDocuments).values({
+        collectionId: collection.id,
+        title: docSeed.title,
+        bodyMd: docSeed.bodyMd,
+        sourceType: "markdown",
+        checksum: Bun.SHA256.hash(docSeed.bodyMd, "hex"),
+      });
     }
   }
 

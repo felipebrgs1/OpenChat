@@ -313,3 +313,80 @@ export const createMemoryBodySchema = z.object({
 export type CreateMemoryBody = z.infer<typeof createMemoryBodySchema>;
 
 export type SendMessageBody = z.infer<typeof sendMessageBodySchema>;
+
+export const knowledgeVisibilitySchema = z.enum(["all", "by_role"]);
+export type KnowledgeVisibility = z.infer<typeof knowledgeVisibilitySchema>;
+
+export const knowledgeCollectionSummarySchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string(),
+  name: z.string(),
+  description: z.string(),
+  visibility: knowledgeVisibilitySchema,
+  documentCount: z.number().int(),
+  roleIds: z.array(z.string().uuid()),
+  updatedAt: z.string(),
+});
+export type KnowledgeCollectionSummary = z.infer<typeof knowledgeCollectionSummarySchema>;
+
+export const knowledgeDocumentSchema = z.object({
+  id: z.string().uuid(),
+  collectionId: z.string().uuid(),
+  title: z.string(),
+  sourceType: z.string(),
+  filename: z.string().nullable(),
+  mime: z.string().nullable(),
+  bodyMd: z.string(),
+  updatedAt: z.string(),
+});
+export type KnowledgeDocument = z.infer<typeof knowledgeDocumentSchema>;
+
+export const knowledgeCollectionDetailSchema = knowledgeCollectionSummarySchema.extend({
+  documents: z.array(knowledgeDocumentSchema),
+});
+export type KnowledgeCollectionDetail = z.infer<typeof knowledgeCollectionDetailSchema>;
+
+export const createKnowledgeCollectionBodySchema = z.object({
+  slug: z
+    .string()
+    .min(2)
+    .regex(/^[a-z0-9-]+$/),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  visibility: knowledgeVisibilitySchema.optional(),
+  roleIds: z.array(z.string().uuid()).optional(),
+});
+export type CreateKnowledgeCollectionBody = z.infer<typeof createKnowledgeCollectionBodySchema>;
+
+export const patchKnowledgeCollectionBodySchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    description: z.string().optional(),
+    visibility: knowledgeVisibilitySchema.optional(),
+    roleIds: z.array(z.string().uuid()).optional(),
+  })
+  .refine(
+    (value) =>
+      value.name !== undefined ||
+      value.description !== undefined ||
+      value.visibility !== undefined ||
+      value.roleIds !== undefined,
+    { message: "Informe ao menos um campo." },
+  );
+export type PatchKnowledgeCollectionBody = z.infer<typeof patchKnowledgeCollectionBodySchema>;
+
+export const createKnowledgeDocumentBodySchema = z.object({
+  title: z.string().min(1),
+  bodyMd: z.string().min(1),
+});
+export type CreateKnowledgeDocumentBody = z.infer<typeof createKnowledgeDocumentBodySchema>;
+
+export const patchKnowledgeDocumentBodySchema = z
+  .object({
+    title: z.string().min(1).optional(),
+    bodyMd: z.string().min(1).optional(),
+  })
+  .refine((value) => value.title !== undefined || value.bodyMd !== undefined, {
+    message: "Informe title ou bodyMd.",
+  });
+export type PatchKnowledgeDocumentBody = z.infer<typeof patchKnowledgeDocumentBodySchema>;
