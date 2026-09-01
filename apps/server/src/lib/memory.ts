@@ -58,15 +58,14 @@ export async function rebuildMemorySummary(userId: string) {
   const context = await getUserMemoryContext(userId);
   // summary is just joined memories for now; later we can call LLM to compact
   const summary = context ? `O usuário ensinou:\n${context}` : null;
-  await db.update(users).set({ memorySummary: summary, updatedAt: new Date() }).where(eq(users.id, userId));
+  await db
+    .update(users)
+    .set({ memorySummary: summary, updatedAt: new Date() })
+    .where(eq(users.id, userId));
   return summary;
 }
 
-export async function addMemory(input: {
-  userId: string;
-  content: string;
-  source?: string;
-}) {
+export async function addMemory(input: { userId: string; content: string; source?: string }) {
   const content = input.content.trim().slice(0, 1000);
   if (content.length < 3) throw new Error("Conteúdo muito curto");
   const [row] = await db

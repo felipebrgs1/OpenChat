@@ -154,7 +154,7 @@ describe("lote 4 — knowledge por cargo", () => {
     }
     const block = await buildKnowledgeBlock(cobranca.id);
     expect(block).toContain("[CONHECIMENTO]");
-    expect(block).toContain("Como a Voz Educa cobra");
+    expect(block).toContain("Como cobramos");
 
     const assembled = assemblePrompt({
       globalSystemPrompt: "global",

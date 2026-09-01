@@ -126,7 +126,13 @@ adminUsageRoutes.get("/", async (c) => {
     budgetUsd: row.budget ?? null,
   }));
 
-  const total = totalRow as unknown as { messages: string; promptTokens: string; completionTokens: string; costUsd: string; credits: string };
+  const total = totalRow as unknown as {
+    messages: string;
+    promptTokens: string;
+    completionTokens: string;
+    costUsd: string;
+    credits: string;
+  };
   return c.json({
     since: since.toISOString(),
     until: new Date().toISOString(),

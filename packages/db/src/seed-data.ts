@@ -1,4 +1,4 @@
-export const GLOBAL_SYSTEM_PROMPT = `Você é o Nexo, assistente interno da Voz Educa.
+export const GLOBAL_SYSTEM_PROMPT = `Você é o Nexo, assistente interno da organização.
 Responda em português brasileiro, curto e operacional.
 Priorize procedimento da empresa sobre conhecimento genérico.
 Se a pergunta for sobre valor, multa, contrato, inadimplência ou dado de aluno e isso não estiver no contexto, diga que não sabe e indique o cargo dono do assunto.
@@ -223,7 +223,7 @@ Marque “entendi meu cargo” quando o texto abaixo fizer sentido. Chat livre v
     starters: starters(
       pad(
         [
-          "O que a Voz Educa faz, em 10 linhas?",
+          "O que a empresa faz, em 10 linhas?",
           "Quem eu procuro para dúvida de cobrança, produto e comercial?",
           "Qual o fluxo de um lead até a escola ativa?",
           "O que eu não posso falar para escola/responsável?",
@@ -250,14 +250,14 @@ export type KnowledgeCollectionSeed = {
 export const KNOWLEDGE_SEEDS: KnowledgeCollectionSeed[] = [
   {
     slug: "como-cobramos",
-    name: "Como a Voz Educa cobra",
+    name: "Como cobramos",
     description: "Regras de cobrança, multa, juros e renegociação.",
     visibility: "by_role",
     roleSlugs: ["cobranca", "suporte", "diretoria"],
     documents: [
       {
         title: "Regras de cobrança (stub)",
-        bodyMd: `# Como a Voz Educa cobra
+        bodyMd: `# Como cobramos
 
 > Documento stub. O time de cobrança deve revisar com os valores oficiais antes de usar em produção.
 

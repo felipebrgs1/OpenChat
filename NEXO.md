@@ -34,7 +34,7 @@ O cargo não é só RBAC de tela. É **contexto operacional**.
 - Multi-tenant SaaS
 - App mobile nativo
 - SSO SAML no lote 1 (reservado; desenhar o modelo para caber depois)
-- UI white-label para cliente final da Voz Educa
+- UI white-label para cliente final (fora do v1)
 
 ## 4. Princípios
 
@@ -48,7 +48,7 @@ O cargo não é só RBAC de tela. É **contexto operacional**.
 
 ## 5. Personas e cargos seed
 
-Cargos iniciais da Voz Educa. Admin pode criar outros depois.
+Cargos iniciais de exemplo (genéricos, adaptáveis por organização). Admin pode criar outros depois.
 
 | slug      | nome                  | para quem            | o que o assistente prioriza                       |
 | --------- | --------------------- | -------------------- | ------------------------------------------------- |
@@ -575,7 +575,7 @@ Entregáveis:
 
 - JWT email/senha (`login` / `refresh` / `logout`) + aceite de convite
 - schema user (`password_hash`) + refresh_token + role + starter + settings + invite + audit
-- seed dos 7 cargos com welcome_md e 8 starters cada (textos reais da Voz Educa — placeholder honesto se o time ainda não escreveu)
+- seed dos 7 cargos com welcome_md e 8 starters cada (textos genéricos de exemplo — placeholder honesto se o time ainda não escreveu)
 - bootstrap admin
 - telas: login, aceite de convite (cria senha), home do cargo, admin usuários/cargos (CRUD básico)
 - `GET /api/me` devolve user + role + starters
@@ -658,7 +658,7 @@ Aceite:
 
 Textos seed mínimos (podem ser stub):
 
-- Como a Voz Educa cobra (cobrança)
+- Como cobramos — política de cobrança (cobrança)
 - Script de WhatsApp responsável (suporte + cobrança)
 - O que o comercial pode prometer (comercial)
 - Stack e como subir o ambiente (produto)
@@ -733,7 +733,7 @@ Usar estes textos. Ajustar depois com o time.
 
 ### novato
 
-- O que a Voz Educa faz, em 10 linhas?
+- O que a empresa faz, em 10 linhas?
 - Quem eu procuro para dúvida de cobrança, produto e comercial?
 - Qual o fluxo de um lead até a escola ativa?
 - O que eu não posso falar para escola/responsável?
@@ -793,7 +793,7 @@ Usar estes textos. Ajustar depois com o time.
 ## 16. Prompt global seed
 
 ```
-Você é o Nexo, assistente interno da Voz Educa.
+Você é o Nexo, assistente interno da organização.
 Responda em português brasileiro, curto e operacional.
 Priorize procedimento da empresa sobre conhecimento genérico.
 Se a pergunta for sobre valor, multa, contrato, inadimplência ou dado de aluno e isso não estiver no contexto, diga que não sabe e indique o cargo dono do assunto.

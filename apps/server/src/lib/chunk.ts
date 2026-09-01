@@ -15,7 +15,10 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / CHARS_PER_TOKEN);
 }
 
-export function chunkMarkdown(bodyMd: string, opts?: { charsPerChunk?: number; overlapChars?: number }): string[] {
+export function chunkMarkdown(
+  bodyMd: string,
+  opts?: { charsPerChunk?: number; overlapChars?: number },
+): string[] {
   const charsPerChunk = opts?.charsPerChunk ?? CHARS_PER_CHUNK;
   const overlapChars = opts?.overlapChars ?? OVERLAP_CHARS;
   const text = bodyMd.trim();

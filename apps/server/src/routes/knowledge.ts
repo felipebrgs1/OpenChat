@@ -4,7 +4,13 @@ import {
   patchKnowledgeCollectionBodySchema,
   patchKnowledgeDocumentBodySchema,
 } from "@nexo/contracts";
-import { db, knowledgeChunks, knowledgeCollections, knowledgeDocuments, knowledgeRoles } from "@nexo/db";
+import {
+  db,
+  knowledgeChunks,
+  knowledgeCollections,
+  knowledgeDocuments,
+  knowledgeRoles,
+} from "@nexo/db";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 
@@ -104,7 +110,10 @@ async function reindexDocument(documentId: string, collectionId: string, bodyMd:
       await db.insert(knowledgeChunks).values(batch);
     }
   } catch (e) {
-    console.warn(`reindex falhou para doc ${documentId}:`, e instanceof Error ? e.message : String(e));
+    console.warn(
+      `reindex falhou para doc ${documentId}:`,
+      e instanceof Error ? e.message : String(e),
+    );
     // fallback: salva chunks sem embedding para não bloquear criação
     try {
       const fallbackRows = chunks.map((content, i) => ({
@@ -120,7 +129,9 @@ async function reindexDocument(documentId: string, collectionId: string, bodyMd:
   }
 }
 
-async function extractTextFromFile(file: File): Promise<{ text: string; filename: string; mime: string }> {
+async function extractTextFromFile(
+  file: File,
+): Promise<{ text: string; filename: string; mime: string }> {
   const filename = file.name;
   const mime = file.type || "application/octet-stream";
   const lower = filename.toLowerCase();
@@ -280,7 +291,10 @@ knowledgeRoutes.post("/:id/upload", async (c) => {
   const titleForm = form.get("title");
   const { text, filename, mime } = await extractTextFromFile(file);
   if (!text.trim()) throw forbidden("Arquivo vazio ou ilegível.");
-  const title = (typeof titleForm === "string" && titleForm.trim()) || filename.replace(/\.[^.]+$/, "") || "Documento";
+  const title =
+    (typeof titleForm === "string" && titleForm.trim()) ||
+    filename.replace(/\.[^.]+$/, "") ||
+    "Documento";
 
   const [row] = await db
     .insert(knowledgeDocuments)
@@ -297,7 +311,10 @@ knowledgeRoutes.post("/:id/upload", async (c) => {
     .returning();
   if (!row) throw new Error("failed to create document from upload");
 
-  await db.update(knowledgeCollections).set({ updatedAt: new Date() }).where(eq(knowledgeCollections.id, id));
+  await db
+    .update(knowledgeCollections)
+    .set({ updatedAt: new Date() })
+    .where(eq(knowledgeCollections.id, id));
   await reindexDocument(row.id, collection.id, row.bodyMd);
 
   await writeAudit({

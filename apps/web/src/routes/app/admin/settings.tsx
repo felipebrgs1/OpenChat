@@ -41,9 +41,7 @@ function AdminSettingsPage() {
   });
 
   if (settings.isLoading || !settings.data) {
-    return (
-      <section className="px-8 py-10 text-sm text-muted-foreground">Carregando…</section>
-    );
+    return <section className="px-8 py-10 text-sm text-muted-foreground">Carregando…</section>;
   }
 
   const promptValue = globalPrompt ?? settings.data.globalSystemPrompt;
@@ -54,7 +52,10 @@ function AdminSettingsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Prompt global entra em todos os cargos (lote 5). Modelos ficam em{" "}
-          <a href="/app/admin/models" className="underline">Modelos</a>.
+          <a href="/app/admin/models" className="underline">
+            Modelos
+          </a>
+          .
         </p>
       </div>
 
@@ -112,7 +113,11 @@ function AdminSettingsPage() {
             . Deixe vazio e salve para remover o limite.
           </p>
         </div>
-        <Button type="submit" className="w-fit rounded-xl" disabled={save.isPending || budget === ""}>
+        <Button
+          type="submit"
+          className="w-fit rounded-xl"
+          disabled={save.isPending || budget === ""}
+        >
           Salvar orçamento
         </Button>
       </form>

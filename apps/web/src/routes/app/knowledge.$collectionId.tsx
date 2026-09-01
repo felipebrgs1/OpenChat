@@ -13,8 +13,7 @@ function CollectionPage() {
   const { collectionId } = Route.useParams();
   const collection = useQuery({
     queryKey: ["knowledge", collectionId],
-    queryFn: () =>
-      api<KnowledgeCollectionDetail>(`/api/knowledge/${collectionId}`),
+    queryFn: () => api<KnowledgeCollectionDetail>(`/api/knowledge/${collectionId}`),
   });
 
   if (collection.isLoading) {

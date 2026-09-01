@@ -58,7 +58,9 @@ export async function embedTexts(texts: string[]): Promise<EmbedResult> {
   for (const e of embeddings) {
     if (e.length !== EMBEDDING_DIMENSIONS) {
       // alguns modelos podem ter dim diferente; loga mas não quebra se for prox
-      console.warn(`embedding dimension mismatch: expected ${EMBEDDING_DIMENSIONS} got ${e.length}`);
+      console.warn(
+        `embedding dimension mismatch: expected ${EMBEDDING_DIMENSIONS} got ${e.length}`,
+      );
     }
   }
   return { embeddings, model: json.model ?? model };

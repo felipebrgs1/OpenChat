@@ -55,7 +55,8 @@ meRoutes.patch("/", async (c) => {
           : body.onboardedAt
             ? new Date(body.onboardedAt)
             : null,
-      personalPrompt: body.personalPrompt === undefined ? current.personalPrompt : body.personalPrompt,
+      personalPrompt:
+        body.personalPrompt === undefined ? current.personalPrompt : body.personalPrompt,
       autoLearn: body.autoLearn === undefined ? current.autoLearn : body.autoLearn,
       updatedAt: new Date(),
     })
@@ -94,7 +95,11 @@ meRoutes.get("/memory", async (c) => {
 meRoutes.post("/memory", async (c) => {
   const user = c.get("user");
   const body = await parseBody(createMemoryBodySchema, await c.req.json());
-  const row = await addMemory({ userId: user.id, content: body.content, source: body.source ?? "manual" });
+  const row = await addMemory({
+    userId: user.id,
+    content: body.content,
+    source: body.source ?? "manual",
+  });
   if (!row) throw notFound("Falha ao salvar memória");
   return c.json({
     id: row.id,

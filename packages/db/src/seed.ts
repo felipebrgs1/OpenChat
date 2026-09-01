@@ -82,7 +82,9 @@ export async function seed(db = defaultDb) {
           status: "active",
           emailVerified: true,
           // garante 1000 créditos iniciais (1000 créditos = US$1)
-          creditBalance: (existingAdmin as unknown as { creditBalance: string | null }).creditBalance ?? "1000.0000",
+          creditBalance:
+            (existingAdmin as unknown as { creditBalance: string | null }).creditBalance ??
+            "1000.0000",
           updatedAt: new Date(),
         })
         .where(eq(users.id, existingAdmin.id));
@@ -120,15 +122,17 @@ export async function seed(db = defaultDb) {
     )[0];
     const collection = existingCollection
       ? existingCollection
-      : (await db
-          .insert(knowledgeCollections)
-          .values({
-            slug: collectionSeed.slug,
-            name: collectionSeed.name,
-            description: collectionSeed.description,
-            visibility: collectionSeed.visibility,
-          })
-          .returning())[0];
+      : (
+          await db
+            .insert(knowledgeCollections)
+            .values({
+              slug: collectionSeed.slug,
+              name: collectionSeed.name,
+              description: collectionSeed.description,
+              visibility: collectionSeed.visibility,
+            })
+            .returning()
+        )[0];
     if (!collection) {
       throw new Error(`Falha ao gravar base ${collectionSeed.slug}`);
     }

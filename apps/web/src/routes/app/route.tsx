@@ -80,8 +80,7 @@ function AppShellInner() {
             to="/app/knowledge"
             className={cn(
               "mt-1 flex h-8 items-center gap-2 rounded-xl px-2 text-[13px] text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
-              pathname.startsWith("/app/knowledge") &&
-                "bg-sidebar-accent text-sidebar-foreground",
+              pathname.startsWith("/app/knowledge") && "bg-sidebar-accent text-sidebar-foreground",
             )}
           >
             <BookOpenText className="size-4" />

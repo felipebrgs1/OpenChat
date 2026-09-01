@@ -1,7 +1,4 @@
-import type {
-  KnowledgeCollectionSummary,
-  RoleSummary,
-} from "@nexo/contracts";
+import type { KnowledgeCollectionSummary, RoleSummary } from "@nexo/contracts";
 import { Button } from "@nexo/ui/components/button";
 import { Checkbox } from "@nexo/ui/components/checkbox";
 import { Input } from "@nexo/ui/components/input";
@@ -79,17 +76,6 @@ function AdminKnowledgePage() {
     },
   });
 
-  const removeDocument = useMutation({
-    mutationFn: (id: string) => api(`/api/knowledge/documents/${id}`, { method: "DELETE" }),
-    onSuccess: async () => {
-      await invalidate();
-      toast.success("Documento removido.");
-    },
-    onError: (error) => {
-      toast.error(error instanceof ApiRequestError ? error.message : "Falha ao remover.");
-    },
-  });
-
   return (
     <section className="mx-auto w-full max-w-5xl space-y-8 px-6 py-8 sm:px-8">
       <div>
@@ -143,7 +129,11 @@ function AdminKnowledgePage() {
                 onChange={(event) => setDocBody(event.target.value)}
                 required
               />
-              <Button type="submit" className="w-fit rounded-xl" disabled={createDocument.isPending}>
+              <Button
+                type="submit"
+                className="w-fit rounded-xl"
+                disabled={createDocument.isPending}
+              >
                 Publicar neste base
               </Button>
             </form>

@@ -19,7 +19,11 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-export async function retrieveKnowledgeChunks(query: string, roleId: string | null, topK = RAG_TOP_K): Promise<RagChunk[]> {
+export async function retrieveKnowledgeChunks(
+  query: string,
+  roleId: string | null,
+  topK = RAG_TOP_K,
+): Promise<RagChunk[]> {
   const q = query.trim();
   if (!q) return [];
   if (!roleId) return [];
@@ -41,7 +45,12 @@ export async function retrieveKnowledgeChunks(query: string, roleId: string | nu
         db
           .select({ one: knowledgeRoles.collectionId })
           .from(knowledgeRoles)
-          .where(and(eq(knowledgeRoles.roleId, roleId), eq(knowledgeRoles.collectionId, knowledgeCollections.id))),
+          .where(
+            and(
+              eq(knowledgeRoles.roleId, roleId),
+              eq(knowledgeRoles.collectionId, knowledgeCollections.id),
+            ),
+          ),
       ),
     ),
   );
@@ -80,14 +89,16 @@ export async function retrieveKnowledgeChunks(query: string, roleId: string | nu
     list = ((rows as { rows: unknown[] }).rows ?? []) as unknown[];
   }
 
-  return (list as Array<{
-    chunk_id: string;
-    document_id: string;
-    collection_id: string;
-    title: string;
-    content: string;
-    distance: number;
-  }>).map((r) => ({
+  return (
+    list as Array<{
+      chunk_id: string;
+      document_id: string;
+      collection_id: string;
+      title: string;
+      content: string;
+      distance: number;
+    }>
+  ).map((r) => ({
     chunkId: r.chunk_id,
     documentId: r.document_id,
     collectionId: r.collection_id,

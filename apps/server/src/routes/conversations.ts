@@ -3,7 +3,15 @@ import {
   patchConversationBodySchema,
   sendMessageBodySchema,
 } from "@nexo/contracts";
-import { conversations, db, messages, roleStarterPrompts, roles, usageEvents, users } from "@nexo/db";
+import {
+  conversations,
+  db,
+  messages,
+  roleStarterPrompts,
+  roles,
+  usageEvents,
+  users,
+} from "@nexo/db";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -269,12 +277,8 @@ conversationRoutes.post("/:id/messages", async (c) => {
     try {
       await assertBudgets({ userId: user.id, orgSettings: settings });
     } catch (budgetError) {
-      const message =
-        budgetError instanceof Error ? budgetError.message : "Orçamento atingido.";
-      await db
-        .update(messages)
-        .set({ error: message })
-        .where(eq(messages.id, assistantMessage.id));
+      const message = budgetError instanceof Error ? budgetError.message : "Orçamento atingido.";
+      await db.update(messages).set({ error: message }).where(eq(messages.id, assistantMessage.id));
       await stream.writeSSE({
         event: "error",
         data: JSON.stringify({ code: "BUDGET_EXCEEDED", message }),
@@ -401,9 +405,19 @@ conversationRoutes.post("/:id/messages", async (c) => {
     } catch (error) {
       const message = publicLlmError(error);
       // se for BUDGET_EXCEEDED já tratado, mas em caso geral
-      if (message.includes("BUDGET_EXCEEDED") || (error instanceof Error && (error as unknown as { code?: string }).code === "BUDGET_EXCEEDED")) {
-        await db.update(messages).set({ content: full, error: message, model }).where(eq(messages.id, assistantMessage.id));
-        await stream.writeSSE({ event: "error", data: JSON.stringify({ code: "BUDGET_EXCEEDED", message }) });
+      if (
+        message.includes("BUDGET_EXCEEDED") ||
+        (error instanceof Error &&
+          (error as unknown as { code?: string }).code === "BUDGET_EXCEEDED")
+      ) {
+        await db
+          .update(messages)
+          .set({ content: full, error: message, model })
+          .where(eq(messages.id, assistantMessage.id));
+        await stream.writeSSE({
+          event: "error",
+          data: JSON.stringify({ code: "BUDGET_EXCEEDED", message }),
+        });
         return;
       }
       await db

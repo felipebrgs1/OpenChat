@@ -97,11 +97,11 @@ function AdminUsersPage() {
                 {role.name}
               </option>
             ))}
-            </select>
-          </div>
-          <Button type="submit" className="rounded-xl" disabled={invite.isPending}>
-            Convidar
-          </Button>
+          </select>
+        </div>
+        <Button type="submit" className="rounded-xl" disabled={invite.isPending}>
+          Convidar
+        </Button>
       </form>
 
       <div className="overflow-x-auto rounded-2xl border">
@@ -143,7 +143,10 @@ function AdminUsersPage() {
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
-                      {Number((row as unknown as { creditBalance: string }).creditBalance ?? "1000").toFixed(1)} cr
+                      {Number(
+                        (row as unknown as { creditBalance: string }).creditBalance ?? "1000",
+                      ).toFixed(1)}{" "}
+                      cr
                     </span>
                     <CreditAdjust userId={row.id} />
                   </div>
@@ -211,82 +214,14 @@ function CreditAdjust({ userId }: { userId: string }) {
         value={amount}
         onChange={(e) => setAmount(e.target.value)}
       />
-      <Button size="xs" variant="ghost" className="h-7 rounded-full px-2 text-xs" disabled={!amount || mutate.isPending} onClick={() => mutate.mutate()}>
-        +
-      </Button>
-    </span>
-  );
-}
-
-function BudgetInput({ userId, value }: { userId: string; value: string | null }) {
-  const queryClient = useQueryClient();
-  const [draft, setDraft] = useState(value === null ? "" : value);
-  const [editing, setEditing] = useState(false);
-
-  const mutate = useMutation({
-    mutationFn: (input: { monthlyBudgetUsd: number | null }) =>
-      api(`/api/admin/users/${userId}`, {
-        method: "PATCH",
-        body: JSON.stringify(input),
-      }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["admin-users"] });
-      toast.success("Orçamento atualizado.");
-      setEditing(false);
-    },
-    onError: (e) => toast.error(e instanceof ApiRequestError ? e.message : "Falha ao salvar."),
-  });
-
-  if (!editing) {
-    return (
-      <button
-        type="button"
-        className="text-left"
-        onClick={() => {
-          setDraft(value === null ? "" : value);
-          setEditing(true);
-        }}
-      >
-        {value === null ? (
-          <span className="text-xs text-muted-foreground">sem limite · definir</span>
-        ) : (
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
-            {Number(value).toFixed(2)} USD
-          </span>
-        )}
-      </button>
-    );
-  }
-
-  return (
-    <span className="flex items-center gap-1">
-      <Input
-        className="h-7 w-24 rounded-full px-2 text-xs"
-        type="number"
-        step="0.01"
-        min="0"
-        placeholder="10.00"
-        autoFocus
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            mutate.mutate({ monthlyBudgetUsd: draft.trim() === "" ? null : Number(draft) });
-          }
-          if (event.key === "Escape") {
-            setEditing(false);
-          }
-        }}
-      />
       <Button
         size="xs"
         variant="ghost"
         className="h-7 rounded-full px-2 text-xs"
-        disabled={mutate.isPending}
-        onClick={() => mutate.mutate({ monthlyBudgetUsd: draft.trim() === "" ? null : Number(draft) })}
+        disabled={!amount || mutate.isPending}
+        onClick={() => mutate.mutate()}
       >
-        ✓
+        +
       </Button>
     </span>
   );

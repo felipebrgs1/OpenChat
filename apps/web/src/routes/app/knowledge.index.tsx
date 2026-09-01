@@ -25,9 +25,7 @@ function KnowledgePage() {
         </p>
       </div>
 
-      {collections.isLoading ? (
-        <p className="text-sm text-muted-foreground">Carregando…</p>
-      ) : null}
+      {collections.isLoading ? <p className="text-sm text-muted-foreground">Carregando…</p> : null}
 
       {!collections.isLoading && list.length === 0 ? (
         <div className="rounded-2xl border bg-muted/40 p-4 text-sm leading-6 text-muted-foreground">

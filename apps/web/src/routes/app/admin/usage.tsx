@@ -39,7 +39,9 @@ function BucketTable({
               {rows.map((row) => {
                 const budgetValue = budget?.(row.key) ?? null;
                 const over =
-                  budgetValue !== null && row.key !== "—" && Number(row.costUsd) >= Number(budgetValue);
+                  budgetValue !== null &&
+                  row.key !== "—" &&
+                  Number(row.costUsd) >= Number(budgetValue);
                 return (
                   <tr key={row.key} className="border-b last:border-0">
                     <td className="px-4 py-2.5">{row.label}</td>

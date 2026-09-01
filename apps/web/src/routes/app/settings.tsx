@@ -6,18 +6,7 @@ import { Label } from "@nexo/ui/components/label";
 import { Textarea } from "@nexo/ui/components/textarea";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Brain,
-  Check,
-  Info,
-  Loader2,
-  Plus,
-  Save,
-  Sparkles,
-  Trash2,
-  User,
-  Zap,
-} from "lucide-react";
+import { Brain, Check, Info, Loader2, Plus, Save, Sparkles, Trash2, User, Zap } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -45,7 +34,11 @@ function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-10 px-4 py-8 sm:px-8 sm:py-10">
-      <SettingsForm key={me.data.user.id} initialName={me.data.user.name} email={me.data.user.email} />
+      <SettingsForm
+        key={me.data.user.id}
+        initialName={me.data.user.name}
+        email={me.data.user.email}
+      />
       <HermesLoop me={me.data} />
     </div>
   );
@@ -65,7 +58,8 @@ function SettingsForm({ initialName, email }: { initialName: string; email: stri
       queryClient.setQueryData(["me"], data);
       toast.success("Perfil atualizado com sucesso.");
     },
-    onError: (e) => toast.error(e instanceof ApiRequestError ? e.message : "Falha ao salvar perfil"),
+    onError: (e) =>
+      toast.error(e instanceof ApiRequestError ? e.message : "Falha ao salvar perfil"),
   });
 
   return (
@@ -76,7 +70,9 @@ function SettingsForm({ initialName, email }: { initialName: string; email: stri
         </div>
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Perfil</h1>
-          <p className="text-xs text-muted-foreground">Gerencie suas informações básicas de identificação</p>
+          <p className="text-xs text-muted-foreground">
+            Gerencie suas informações básicas de identificação
+          </p>
         </div>
       </div>
 
@@ -88,7 +84,9 @@ function SettingsForm({ initialName, email }: { initialName: string; email: stri
         }}
       >
         <div className="space-y-1.5">
-          <Label htmlFor="name" className="text-xs font-medium">Nome completo</Label>
+          <Label htmlFor="name" className="text-xs font-medium">
+            Nome completo
+          </Label>
           <Input
             id="name"
             value={name}
@@ -99,7 +97,11 @@ function SettingsForm({ initialName, email }: { initialName: string; email: stri
         <div className="flex items-center justify-between pt-1">
           <span className="text-xs text-muted-foreground">{email}</span>
           <Button type="submit" disabled={save.isPending} size="sm">
-            {save.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+            {save.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Save className="size-3.5" />
+            )}
             Salvar
           </Button>
         </div>
@@ -113,9 +115,12 @@ function HermesLoop({ me }: { me: MeResponse }) {
   const memories = useQuery({
     queryKey: ["me", "memory"],
     queryFn: () =>
-      api<{ memories: UserMemory[]; memorySummary: string | null; personalPrompt: string | null; autoLearn: boolean }>(
-        "/api/me/memory",
-      ),
+      api<{
+        memories: UserMemory[];
+        memorySummary: string | null;
+        personalPrompt: string | null;
+        autoLearn: boolean;
+      }>("/api/me/memory"),
     staleTime: 30_000,
   });
 
@@ -201,13 +206,17 @@ function HermesLoop({ me }: { me: MeResponse }) {
         </div>
         <ol className="mt-2.5 list-decimal space-y-1.5 pl-5 text-muted-foreground">
           <li>
-            <b className="text-foreground">Prompt do cargo:</b> <span className="font-medium text-foreground">{me.role?.name ?? "—"}</span> — definido pelo admin com as diretrizes operacionais.
+            <b className="text-foreground">Prompt do cargo:</b>{" "}
+            <span className="font-medium text-foreground">{me.role?.name ?? "—"}</span> — definido
+            pelo admin com as diretrizes operacionais.
           </li>
           <li>
-            <b className="text-foreground">Seu prompt:</b> diretrizes pessoais suas (ex: “sempre responda em tópicos curtos, prefiro PT-BR informal”).
+            <b className="text-foreground">Seu prompt:</b> diretrizes pessoais suas (ex: “sempre
+            responda em tópicos curtos, prefiro PT-BR informal”).
           </li>
           <li>
-            <b className="text-foreground">Memória aprendida:</b> ao dizer “aprenda que…”, “lembre que…” ou dar feedbacks, o sistema aprende automaticamente.
+            <b className="text-foreground">Memória aprendida:</b> ao dizer “aprenda que…”, “lembre
+            que…” ou dar feedbacks, o sistema aprende automaticamente.
           </li>
         </ol>
       </div>
@@ -249,8 +258,12 @@ function HermesLoop({ me }: { me: MeResponse }) {
           </Button>
 
           {me.role ? (
-            <p className="max-w-sm truncate text-[11px] text-muted-foreground" title={me.role.systemPrompt}>
-              Cargo: <span className="font-medium text-foreground">{me.role.name}</span> — “{me.role.systemPrompt.slice(0, 70)}…”
+            <p
+              className="max-w-sm truncate text-[11px] text-muted-foreground"
+              title={me.role.systemPrompt}
+            >
+              Cargo: <span className="font-medium text-foreground">{me.role.name}</span> — “
+              {me.role.systemPrompt.slice(0, 70)}…”
             </p>
           ) : null}
         </div>
@@ -278,7 +291,9 @@ function HermesLoop({ me }: { me: MeResponse }) {
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">
-            Nenhuma memória ainda. Diga <span className="font-medium text-foreground">“aprenda que eu prefiro…”</span> durante uma conversa.
+            Nenhuma memória ainda. Diga{" "}
+            <span className="font-medium text-foreground">“aprenda que eu prefiro…”</span> durante
+            uma conversa.
           </p>
         )}
 
@@ -299,7 +314,11 @@ function HermesLoop({ me }: { me: MeResponse }) {
             disabled={!newMem.trim() || addMem.isPending}
             size="default"
           >
-            {addMem.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+            {addMem.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Plus className="size-3.5" />
+            )}
             Ensinar
           </Button>
         </div>

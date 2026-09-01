@@ -49,11 +49,16 @@ export async function deductCredits(input: {
   const creditsStr = credits.toFixed(4);
   const user = (await db.select().from(users).where(eq(users.id, input.userId)))[0];
   if (!user) throw new Error("user not found");
-  const current = parseFloat((user as unknown as { creditBalance: string }).creditBalance ?? INITIAL_CREDITS);
+  const current = parseFloat(
+    (user as unknown as { creditBalance: string }).creditBalance ?? INITIAL_CREDITS,
+  );
   const after = current - credits;
   const afterStr = after.toFixed(4);
 
-  await db.update(users).set({ creditBalance: afterStr, updatedAt: new Date() }).where(eq(users.id, input.userId));
+  await db
+    .update(users)
+    .set({ creditBalance: afterStr, updatedAt: new Date() })
+    .where(eq(users.id, input.userId));
 
   const [entry] = await db
     .insert(creditLedger)
@@ -85,11 +90,16 @@ export async function grantCredits(input: {
 }) {
   const user = (await db.select().from(users).where(eq(users.id, input.userId)))[0];
   if (!user) throw new Error("user not found");
-  const current = parseFloat((user as unknown as { creditBalance: string }).creditBalance ?? INITIAL_CREDITS);
+  const current = parseFloat(
+    (user as unknown as { creditBalance: string }).creditBalance ?? INITIAL_CREDITS,
+  );
   const after = current + input.amount;
   if (after < 0) throw new Error("saldo não pode ficar negativo");
   const afterStr = after.toFixed(4);
-  await db.update(users).set({ creditBalance: afterStr, updatedAt: new Date() }).where(eq(users.id, input.userId));
+  await db
+    .update(users)
+    .set({ creditBalance: afterStr, updatedAt: new Date() })
+    .where(eq(users.id, input.userId));
   const [entry] = await db
     .insert(creditLedger)
     .values({

@@ -109,7 +109,9 @@ export function ChatThread({
             assistantId = meta.messageId;
             setLive((current) =>
               (current ?? []).map((row) =>
-                row.id === tempAssistant.id ? { ...row, id: meta.messageId, model: meta.model } : row,
+                row.id === tempAssistant.id
+                  ? { ...row, id: meta.messageId, model: meta.model }
+                  : row,
               ),
             );
           },
@@ -168,7 +170,7 @@ export function ChatThread({
 
   // envia initialPrompt uma única vez após history carregar (deep-link ?prompt=)
   // TanStack Query já controla loading; este effect é o único legítimo aqui
-  // e agora com deps corretas (sem eslint-disable)
+  /* eslint-disable react/set-state-in-effect */
   useEffect(() => {
     if (!initialPrompt || sentInitial.current || !history.isSuccess) return;
 
@@ -184,6 +186,7 @@ export function ChatThread({
     window.history.replaceState(null, "", window.location.pathname);
     void send(initialPrompt, initialStarterId);
   }, [history.isSuccess, history.data?.messages, initialPrompt, initialStarterId, send]);
+  /* eslint-enable react/set-state-in-effect */
 
   const lastUser = [...messages].reverse().find((row) => row.role === "user");
   const copy = async (message: ChatMessage) => {

@@ -27,8 +27,7 @@ function HomePage() {
   });
   const knowledge = useQuery({
     queryKey: ["knowledge"],
-    queryFn: () =>
-      api<{ collections: KnowledgeCollectionSummary[] }>("/api/knowledge"),
+    queryFn: () => api<{ collections: KnowledgeCollectionSummary[] }>("/api/knowledge"),
   });
   const onboard = useMutation({
     mutationFn: () =>
