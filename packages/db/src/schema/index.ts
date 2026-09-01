@@ -309,3 +309,68 @@ export const knowledgeChunks = pgTable(
     index("knowledge_chunk_collection_idx").on(table.collectionId),
   ],
 );
+
+export const ragCaseCategoryEnum = pgEnum("rag_case_category", [
+  "factual",
+  "procedural",
+  "negative",
+  "access_denied",
+]);
+
+export const ragEvaluationCases = pgTable(
+  "rag_evaluation_case",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    question: text("question").notNull(),
+    category: ragCaseCategoryEnum("category").notNull(),
+    // cargo que pode responder; null = todos, mas para teste de isolamento usamos slugs específicos
+    allowedRoleSlug: text("allowed_role_slug"),
+    // fonte esperada — coleção e documento que deve aparecer no top-k
+    expectedCollectionSlug: text("expected_collection_slug"),
+    expectedDocumentTitle: text("expected_document_title"),
+    // critérios textuais que a resposta deve conter (keywords / regex simples)
+    expectedKeywords: jsonb("expected_keywords").$type<string[]>(),
+    expectedAnswerCriteria: text("expected_answer_criteria"),
+    // tags livres para filtrar no runner (sigla, numero, etc)
+    tags: jsonb("tags").$type<string[]>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("rag_case_category_idx").on(table.category)],
+);
+
+export const ragEvaluationRuns = pgTable("rag_evaluation_run", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  pipelineVersion: text("pipeline_version").notNull(),
+  gitCommit: text("git_commit"),
+  params: jsonb("params").$type<Record<string, unknown>>(),
+  // resumo agregado: { total, hitRate, negativeCorrectRate, accessDeniedCorrectRate, p50, p95, totalCostUsd }
+  summary: jsonb("summary").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const ragEvaluationResults = pgTable(
+  "rag_evaluation_result",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => ragEvaluationRuns.id, { onDelete: "cascade" }),
+    caseId: uuid("case_id")
+      .notNull()
+      .references(() => ragEvaluationCases.id, { onDelete: "cascade" }),
+    // métricas por caso
+    hit: boolean("hit"),
+    // null para negative/access_denied onde hit não se aplica da mesma forma
+    retrievedChunkIds: jsonb("retrieved_chunk_ids").$type<string[]>(),
+    retrievedTitles: jsonb("retrieved_titles").$type<string[]>(),
+    latencyMs: integer("latency_ms"),
+    costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
+    error: text("error"),
+    meta: jsonb("meta").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("rag_result_run_idx").on(table.runId),
+    index("rag_result_case_idx").on(table.caseId),
+  ],
+);

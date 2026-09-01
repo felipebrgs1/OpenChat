@@ -5,6 +5,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { ZodError } from "zod";
 
 import { ApiError } from "./lib/errors";
+import { adminRagRoutes } from "./routes/admin-rag";
 import { adminSettingsRoutes } from "./routes/admin-settings";
 import { adminUsageRoutes } from "./routes/admin-usage";
 import { adminUserRoutes } from "./routes/admin-users";
@@ -61,6 +62,7 @@ app.route("/api/knowledge", knowledgeRoutes);
 app.route("/api/admin/users", adminUserRoutes);
 app.route("/api/admin/usage", adminUsageRoutes);
 app.route("/api/admin/settings", adminSettingsRoutes);
+app.route("/api/admin/rag", adminRagRoutes);
 app.route("/api/credits", creditRoutes);
 
 app.notFound((c) => {

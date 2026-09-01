@@ -10,6 +10,8 @@ import {
   roles,
   users,
 } from "./schema";
+import { RAG_CASE_SEEDS } from "./rag-cases";
+import { ragEvaluationCases } from "./schema";
 import { GLOBAL_SYSTEM_PROMPT, KNOWLEDGE_SEEDS, ROLE_SEEDS } from "./seed-data";
 
 export async function seed(db = defaultDb) {
@@ -165,6 +167,22 @@ export async function seed(db = defaultDb) {
         checksum: Bun.SHA256.hash(docSeed.bodyMd, "hex"),
       });
     }
+  }
+
+  // R1: base de avaliação
+  for (const c of RAG_CASE_SEEDS) {
+    const exists = (await db.select().from(ragEvaluationCases).then((rows) => rows.find((r) => r.question === c.question)));
+    if (exists) continue;
+    await db.insert(ragEvaluationCases).values({
+      question: c.question,
+      category: c.category,
+      allowedRoleSlug: c.allowedRoleSlug,
+      expectedCollectionSlug: c.expectedCollectionSlug,
+      expectedDocumentTitle: c.expectedDocumentTitle,
+      expectedKeywords: c.expectedKeywords,
+      expectedAnswerCriteria: c.expectedAnswerCriteria,
+      tags: c.tags,
+    });
   }
 
   return { roleIds };
