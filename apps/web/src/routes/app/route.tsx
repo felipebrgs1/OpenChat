@@ -88,6 +88,11 @@ function AppShellInner() {
             Bases
           </Link>
         </div>
+        <div className="px-5 pb-1.5">
+          <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-sidebar-foreground/45">
+            Histórico
+          </p>
+        </div>
         <div className="min-h-0 flex-1">
           <ConversationList />
         </div>
