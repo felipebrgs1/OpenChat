@@ -130,7 +130,7 @@ Aceite:
 - [x] admin vê ranking de gasto (`/app/admin/usage`, com totais e por cargo vs orçamento)
 - [x] user disabled não autentica (`governance.test.ts`)
 - [x] mudança de cargo altera starters/knowledge na próxima request (snapshot já gravado no lote 2)
-- [x] orçamento do cargo estourado → SSE `event: error BUDGET_EXCEEDED` sem chamar o modelo (5 testes novos; server 33 pass)
+- [x] orçamento do cargo estourado → SSE `event: error BUDGET_EXCEEDED` sem chamar o modelo; turno bloqueado não grava usage; usage validado por consistência dos agregados reais (33 testes, sem dados sintéticos)
 
 Correções de typecheck pré-existentes aproveitadas:
 

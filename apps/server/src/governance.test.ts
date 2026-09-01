@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 
-import { db, roles, usageEvents, users } from "@nexo/db";
+import { db, roles, usageEvents } from "@nexo/db";
 import { seed } from "@nexo/db/seed";
 
 import app from "./app";
@@ -45,7 +45,12 @@ async function createUserWithRole(roleSlug: string) {
     method: "POST",
     body: { name: `Gov ${roleSlug}`, password: "senha-segura" },
   });
-  return { token: accept.data!.accessToken as string, email, roleId: role.id };
+  const token = accept.data!.accessToken as string;
+  const list = await request("/api/admin/users", { token: adminToken });
+  const target = (list.data!.users as { id: string; email: string }[]).find(
+    (u) => u.email === email,
+  )!;
+  return { token, adminToken, userId: target.id, roleId: role.id };
 }
 
 async function sendMessage(token: string, conversationId: string) {
@@ -61,23 +66,25 @@ async function sendMessage(token: string, conversationId: string) {
   return await response.text();
 }
 
-describe("lote 5 — governança e uso", () => {
+/** e2e: cria conversa e envia mensagem; devolve o corpo SSE. */
+async function sendFirstMessage(token: string) {
+  const created = await request("/api/conversations", { method: "POST", token, body: {} });
+  expect(created.status).toBe(200);
+  return sendMessage(token, created.data!.id as string);
+}
+
+describe("lote 5 — governança e uso (e2e, sem dados sintéticos)", () => {
   beforeAll(async () => {
     await seed();
   });
 
   it("usuário desativado não autentica (401)", async () => {
-    const adminToken = await login(adminEmail, adminPassword);
-    const { token, email } = await createUserWithRole("suporte");
-    // sanity: autentica antes
+    const { token, adminToken, userId } = await createUserWithRole("suporte");
+
     const meBefore = await request("/api/me", { token });
     expect(meBefore.status).toBe(200);
 
-    const list = await request("/api/admin/users", { token: adminToken });
-    const target = (list.data!.users as { id: string; email: string }[]).find(
-      (u) => u.email === email,
-    )!;
-    const patched = await request(`/api/admin/users/${target.id}`, {
+    const patched = await request(`/api/admin/users/${userId}`, {
       method: "PATCH",
       token: adminToken,
       body: { status: "disabled" },
@@ -88,89 +95,97 @@ describe("lote 5 — governança e uso", () => {
     expect(meAfter.status).toBe(401);
   });
 
-  it("orçamento mensal do cargo estourado → BUDGET_EXCEEDED no SSE", async () => {
-    const { token } = await createUserWithRole("cobranca");
-    const role = (await db.select().from(roles).where(eq(roles.slug, "cobranca")))[0]!;
-    const previousBudget = role.monthlyBudgetUsd;
+  it("orçamento do cargo zerado → BUDGET_EXCEEDED no SSE, sem usage_event", async () => {
+    const { token, adminToken, roleId, userId } = await createUserWithRole("cobranca");
+    const before = await db.select().from(usageEvents).where(eq(usageEvents.userId, userId));
 
-    // grava usage simulado deste mês acima do orçamento que vamos setar
-    const target = (await db.select().from(users).where(eq(users.roleId, role.id)))[0]!;
-    await db.insert(usageEvents).values({
-      userId: target.id,
-      model: "test/model",
-      costUsd: "5.000000",
-      promptTokens: 10,
-      completionTokens: 10,
+    // admin zera o orçamento do cargo via API real
+    const patched = await request(`/api/roles/${roleId}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { monthlyBudgetUsd: 0 },
     });
-
-    await db.update(roles).set({ monthlyBudgetUsd: "1.0000" }).where(eq(roles.id, role.id));
+    expect(patched.status).toBe(200);
 
     try {
-      const created = await request("/api/conversations", { method: "POST", token, body: {} });
-      expect(created.status).toBe(200);
-      const body = await sendMessage(token, created.data!.id as string);
+      const body = await sendFirstMessage(token);
       expect(body).toContain("event: error");
       expect(body).toContain("BUDGET_EXCEEDED");
       expect(body).toContain("cargo");
+
+      // turno bloqueado não grava usage
+      const after = await db.select().from(usageEvents).where(eq(usageEvents.userId, userId));
+      expect(after.length).toBe(before.length);
     } finally {
-      await db.update(roles).set({ monthlyBudgetUsd: previousBudget }).where(eq(roles.id, role.id));
+      await request(`/api/roles/${roleId}`, {
+        method: "PATCH",
+        token: adminToken,
+        body: { monthlyBudgetUsd: null },
+      });
     }
   });
 
-  it("orçamento mensal do usuário estourado → BUDGET_EXCEEDED", async () => {
-    const adminToken = await login(adminEmail, adminPassword);
-    const { token, email } = await createUserWithRole("suporte");
-    const list = await request("/api/admin/users", { token: adminToken });
-    const target = (list.data!.users as { id: string; email: string }[]).find(
-      (u) => u.email === email,
-    )!;
+  it("orçamento do usuário zerado → BUDGET_EXCEEDED; null remove o limite", async () => {
+    const { token, adminToken, userId } = await createUserWithRole("suporte");
 
-    await db.insert(usageEvents).values({
-      userId: target.id,
-      model: "test/model",
-      costUsd: "2.000000",
-      promptTokens: 5,
-      completionTokens: 5,
-    });
-
-    const patched = await request(`/api/admin/users/${target.id}`, {
+    const patched = await request(`/api/admin/users/${userId}`, {
       method: "PATCH",
       token: adminToken,
-      body: { monthlyBudgetUsd: 1 },
+      body: { monthlyBudgetUsd: 0 },
     });
     expect(patched.status).toBe(200);
-    expect((patched.data! as { monthlyBudgetUsd: string }).monthlyBudgetUsd).toBe("1.0000");
+    expect((patched.data! as { monthlyBudgetUsd: string }).monthlyBudgetUsd).toBe("0.0000");
 
-    const created = await request("/api/conversations", { method: "POST", token, body: {} });
-    expect(created.status).toBe(200);
-    const body = await sendMessage(token, created.data!.id as string);
+    const body = await sendFirstMessage(token);
     expect(body).toContain("event: error");
     expect(body).toContain("BUDGET_EXCEEDED");
     expect(body).toContain("usuário");
 
-    // limpa orçamento
-    const cleared = await request(`/api/admin/users/${target.id}`, {
+    const cleared = await request(`/api/admin/users/${userId}`, {
       method: "PATCH",
       token: adminToken,
       body: { monthlyBudgetUsd: null },
     });
+    expect(cleared.status).toBe(200);
     expect((cleared.data! as { monthlyBudgetUsd: string }).monthlyBudgetUsd).toBeNull();
-  });
 
-  it("GET /api/admin/usage agrega por user/cargo/modelo/dia", async () => {
+    // sem limite (e saldo 1000), o erro deixa de ser BUDGET_EXCEEDED
+    // (chamada LLM real; timeout maior que o default de 5s)
+    const afterClear = await sendFirstMessage(token);
+    expect(afterClear).not.toContain("BUDGET_EXCEEDED");
+  }, 60000);
+
+  it("GET /api/admin/usage: agregados consistentes com os eventos reais", async () => {
     const adminToken = await login(adminEmail, adminPassword);
     const result = await request("/api/admin/usage?days=30", { token: adminToken });
     expect(result.status).toBe(200);
-    const data = result.data! as Record<string, unknown>;
-    expect(Array.isArray(data.byUser)).toBe(true);
-    expect(Array.isArray(data.byRole)).toBe(true);
-    expect(Array.isArray(data.byModel)).toBe(true);
-    expect(Array.isArray(data.byDay)).toBe(true);
-    const total = data.total as { costUsd: string; messages: number };
-    expect(Number(total.costUsd)).toBeGreaterThanOrEqual(0);
-    // deve conter ao menos o usage_event inserido nos testes anteriores
-    const byModel = data.byModel as { key: string; costUsd: string }[];
-    expect(byModel.some((row) => row.key === "test/model")).toBe(true);
+
+    const data = result.data! as {
+      total: { messages: number; costUsd: string; credits: string };
+      byUser: { messages: number; costUsd: string }[];
+      byRole: { messages: number; budgetUsd: string | null }[];
+      byModel: { key: string; costUsd: string; messages: number }[];
+      byDay: { messages: number; costUsd: string }[];
+    };
+
+    // consistência: total é a soma dos buckets por usuário
+    const sumUserMessages = data.byUser.reduce((acc, row) => acc + row.messages, 0);
+    const sumUserCost = data.byUser.reduce((acc, row) => acc + Number(row.costUsd), 0);
+    expect(sumUserMessages).toBe(data.total.messages);
+    expect(Math.abs(sumUserCost - Number(data.total.costUsd))).toBeLessThan(1e-6);
+
+    // por modelo também soma o total
+    const sumModelCost = data.byModel.reduce((acc, row) => acc + Number(row.costUsd), 0);
+    expect(Math.abs(sumModelCost - Number(data.total.costUsd))).toBeLessThan(1e-6);
+
+    // por dia também
+    const sumDayMessages = data.byDay.reduce((acc, row) => acc + row.messages, 0);
+    expect(sumDayMessages).toBe(data.total.messages);
+
+    // cargos trazem orçamento (null = sem limite)
+    for (const row of data.byRole) {
+      expect(row.budgetUsd === null || typeof row.budgetUsd === "string").toBe(true);
+    }
   });
 
   it("não-admin não acessa /api/admin/usage", async () => {
