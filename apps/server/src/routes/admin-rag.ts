@@ -1,10 +1,5 @@
 import { asc, eq } from "drizzle-orm";
-import {
-  db,
-  ragEvaluationCases,
-  ragEvaluationResults,
-  ragEvaluationRuns,
-} from "@nexo/db";
+import { db, ragEvaluationCases, ragEvaluationResults, ragEvaluationRuns } from "@nexo/db";
 import { Hono } from "hono";
 
 import { requireAdmin, requireAuth, type AuthUser } from "../middleware/auth";
@@ -16,7 +11,10 @@ adminRagRoutes.use("*", requireAuth, requireAdmin);
 
 // lista casos
 adminRagRoutes.get("/cases", async (c) => {
-  const rows = await db.select().from(ragEvaluationCases).orderBy(asc(ragEvaluationCases.createdAt));
+  const rows = await db
+    .select()
+    .from(ragEvaluationCases)
+    .orderBy(asc(ragEvaluationCases.createdAt));
   return c.json({ cases: rows });
 });
 
@@ -44,7 +42,8 @@ adminRagRoutes.get("/runs/:id", async (c) => {
 adminRagRoutes.get("/compare", async (c) => {
   const a = c.req.query("a");
   const b = c.req.query("b");
-  if (!a || !b) return c.json({ error: { code: "VALIDATION", message: "Informe ?a=runId&a&b=runId" } }, 400);
+  if (!a || !b)
+    return c.json({ error: { code: "VALIDATION", message: "Informe ?a=runId&a&b=runId" } }, 400);
   const res = await compareRuns(a, b);
   return c.json(res);
 });
@@ -52,7 +51,8 @@ adminRagRoutes.get("/compare", async (c) => {
 // dispara avaliação
 adminRagRoutes.post("/runs", async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const pipelineVersion = typeof body.pipelineVersion === "string" ? body.pipelineVersion : undefined;
+  const pipelineVersion =
+    typeof body.pipelineVersion === "string" ? body.pipelineVersion : undefined;
   const topK = typeof body.topK === "number" ? body.topK : undefined;
   const limit = typeof body.limit === "number" ? body.limit : undefined;
   const result = await runRagEvaluation({ pipelineVersion, topK, limit });

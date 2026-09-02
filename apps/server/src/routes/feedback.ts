@@ -49,8 +49,17 @@ feedbackRoutes.get("/", async (c) => {
   // lista feedbacks do usuário (ou admin vê todos)
   const where = user.isAdmin ? undefined : eq(knowledgeFeedback.userId, user.id);
   const rows = where
-    ? await db.select().from(knowledgeFeedback).where(where).orderBy(desc(knowledgeFeedback.createdAt)).limit(100)
-    : await db.select().from(knowledgeFeedback).orderBy(desc(knowledgeFeedback.createdAt)).limit(100);
+    ? await db
+        .select()
+        .from(knowledgeFeedback)
+        .where(where)
+        .orderBy(desc(knowledgeFeedback.createdAt))
+        .limit(100)
+    : await db
+        .select()
+        .from(knowledgeFeedback)
+        .orderBy(desc(knowledgeFeedback.createdAt))
+        .limit(100);
   return c.json({ feedback: rows });
 });
 

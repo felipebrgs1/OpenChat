@@ -8,10 +8,11 @@
     "compile": "bun build --compile --minify --sourcemap --bytecode ./src/index.ts --outfile server",
     "dev": "bun run --hot src/index.ts",
     "start": "bun run dist/index.mjs",
-    "test": "bun test src/auth.test.ts src/chat.test.ts src/lib/pi-harness.test.ts"
+    "test": "bun test src/auth.test.ts src/chat.test.ts src/knowledge.test.ts src/lib/acl.test.ts src/lib/storage.test.ts src/lib/pi-harness.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1124.0",
+    "@aws-sdk/s3-request-presigner": "^3.1124.0",
     "@earendil-works/pi-ai": "^0.84.3",
     "@earendil-works/pi-coding-agent": "^0.84.3",
     "@nexo/contracts": "workspace:*",

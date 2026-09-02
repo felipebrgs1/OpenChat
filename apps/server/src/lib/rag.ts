@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 
+import { ragPermissionSql } from "./acl";
 import { embedQuery, embeddingModel, vectorLiteral } from "./embeddings";
 import { hasSufficientEvidence, rerankChunks } from "./reranker";
 
@@ -56,19 +57,6 @@ function unwrapRows(res: unknown): unknown[] {
     return ((res as { rows: unknown[] }).rows ?? []) as unknown[];
   }
   return [];
-}
-
-function permissionFilterSql(roleId: string, userId?: string | null, isAdmin?: boolean) {
-  if (isAdmin) return sql`TRUE`;
-  // R6: documento pode ser publico (all) ou por cargo (by_role) via knowledge_document_role
-  // Acesso se: coleção permite OR documento permite OR é dono
-  const ownerCheck = userId ? sql` OR kd.owner_id = ${userId}::uuid` : sql``;
-  return sql`(
-    kcol.visibility = 'all'
-    OR EXISTS (SELECT 1 FROM knowledge_role kr WHERE kr.collection_id = kcol.id AND kr.role_id = ${roleId}::uuid)
-    OR kd.visibility = 'all'${ownerCheck}
-    OR EXISTS (SELECT 1 FROM knowledge_document_role kdr WHERE kdr.document_id = kd.id AND kdr.role_id = ${roleId}::uuid)
-  )`;
 }
 
 type VectorRow = {
@@ -178,7 +166,8 @@ export async function retrieveKnowledgeChunksWithTelemetry(
     const tokens = Math.ceil(q.length / 4);
     costUsd = (tokens / 1_000_000) * 0.02;
     const literal = vectorLiteral(embedding);
-    const perm = isAdmin ? sql`TRUE` : permissionFilterSql(roleId!, userId, false);
+    // política única de ACL (lib/acl.ts): coleção AND documento, nunca OR
+    const perm = ragPermissionSql({ isAdmin, roleId: roleId!, userId });
     const res = await sqlExecute<VectorRow>(sql`
       SELECT
         kc.id as chunk_id,
@@ -200,7 +189,10 @@ export async function retrieveKnowledgeChunksWithTelemetry(
     vectorRows = res;
   } catch (e) {
     embeddingFailed = true;
-    console.warn("rag vector search falhou, usando só textual", e instanceof Error ? e.message : String(e));
+    console.warn(
+      "rag vector search falhou, usando só textual",
+      e instanceof Error ? e.message : String(e),
+    );
   }
 
   // 2) text search (tsvector português + fallback ILIKE para siglas/códigos)
@@ -208,7 +200,8 @@ export async function retrieveKnowledgeChunksWithTelemetry(
   let textMs: number | null = null;
   try {
     const t0 = performance.now();
-    const perm = isAdmin ? sql`TRUE` : permissionFilterSql(roleId!, userId, false);
+    // política única de ACL (lib/acl.ts): coleção AND documento, nunca OR
+    const perm = ragPermissionSql({ isAdmin, roleId: roleId!, userId });
     // websearch_to_tsquery lida melhor com siglas, códigos e frases; simple como fallback para códigos com hífen
     const res = await sqlExecute<TextRow>(sql`
       SELECT
@@ -280,8 +273,12 @@ export async function retrieveKnowledgeChunksWithTelemetry(
   const topScore = reranked[0]?.rrfScore ?? 0;
   const filtered = reranked.filter((c) => {
     const lex = (() => {
-      const qTerms = q.toLowerCase().split(/\s+/).filter((t) => t.length >= 3);
-      const txt = `${(c as unknown as { title?: string }).title ?? ""} ${c.heading ?? ""} ${c.content}`.toLowerCase();
+      const qTerms = q
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((t) => t.length >= 3);
+      const txt =
+        `${(c as unknown as { title?: string }).title ?? ""} ${c.heading ?? ""} ${c.content}`.toLowerCase();
       if (qTerms.length === 0) return 0;
       let hits = 0;
       for (const t of qTerms) if (txt.includes(t)) hits++;
@@ -339,11 +336,17 @@ export async function retrieveKnowledgeChunksWithTelemetry(
 
 async function sqlExecute<T>(q: ReturnType<typeof sql>): Promise<T[]> {
   const { db } = await import("@nexo/db");
-  const res = (await (db as unknown as { execute: (s: unknown) => Promise<unknown> }).execute(q)) as unknown;
+  const res = (await (db as unknown as { execute: (s: unknown) => Promise<unknown> }).execute(
+    q,
+  )) as unknown;
   return unwrapRows(res) as T[];
 }
 
-function rrfCombine(vectorRows: VectorRow[], textRows: TextRow[], _candidateLimit: number): RagChunk[] {
+function rrfCombine(
+  vectorRows: VectorRow[],
+  textRows: TextRow[],
+  _candidateLimit: number,
+): RagChunk[] {
   const map = new Map<string, RagChunk & { _vRank: number | null; _tRank: number | null }>();
 
   vectorRows.forEach((r, idx) => {

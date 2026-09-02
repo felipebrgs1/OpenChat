@@ -21,7 +21,10 @@ export interface RouterAppContext {}
 export const Route = createRootRouteWithContext<RouterAppContext>()({
   component: RootComponent,
   head: () => ({
-    meta: [{ title: "Oráculo" }, { name: "description", content: "Assistente interno inteligente" }],
+    meta: [
+      { title: "Oráculo" },
+      { name: "description", content: "Assistente interno inteligente" },
+    ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
       { rel: "alternate icon", href: "/favicon.ico" },

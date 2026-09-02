@@ -77,7 +77,13 @@ services:
       PORT: 8001
       OCR_ENABLED: ${OCR_ENABLED:-false}
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')",
+        ]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -85,22 +91,23 @@ services:
     restart: unless-stopped
     profiles: ["docling"]
 
-  # R2 — RustFS (S3 compatível). Em dev usamos MinIO, mesma API S3.
-  # Produção: trocar imagem por rustfs/rustfs:latest com TLS e rede privada.
+  # rustfs — storage S3-compatível padrão do sistema.
+  # Produção: RustFS com TLS e rede privada (ou R2 opcional via STORAGE_DRIVER=r2).
   rustfs:
-    image: minio/minio:latest
+    image: rustfs/rustfs:latest
     container_name: nexo-rustfs
-    command: server /data --console-address ":9001"
+    # imagem roda como uid 10001 por default; o volume nomeado pode ter sido
+    # criado antes pela imagem MinIO (dono root) — root evita permission denied
+    user: "0"
     ports:
       - "9000:9000"
-      - "9001:9001"
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-nexo}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-nexo12345}
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-nexo}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-nexo12345}
     volumes:
       - nexo_rustfs_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
       interval: 10s
       timeout: 5s
       retries: 5

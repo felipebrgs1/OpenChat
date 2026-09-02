@@ -89,7 +89,9 @@ function AppShellInner() {
             to="/app/documents"
             className={cn(
               "flex h-8 items-center gap-2 rounded-xl px-2 text-[13px] text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
-              pathname.startsWith("/app/documents") && !pathname.startsWith("/app/admin") && "bg-sidebar-accent text-sidebar-foreground",
+              pathname.startsWith("/app/documents") &&
+                !pathname.startsWith("/app/admin") &&
+                "bg-sidebar-accent text-sidebar-foreground",
             )}
           >
             <BookOpenText className="size-4" />
@@ -100,7 +102,8 @@ function AppShellInner() {
               to="/app/admin/documents"
               className={cn(
                 "flex h-8 items-center gap-2 rounded-xl px-2 text-[13px] text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
-                pathname.startsWith("/app/admin/documents") && "bg-sidebar-accent text-sidebar-foreground",
+                pathname.startsWith("/app/admin/documents") &&
+                  "bg-sidebar-accent text-sidebar-foreground",
               )}
             >
               <BookOpenText className="size-4" />

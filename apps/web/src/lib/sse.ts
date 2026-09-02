@@ -6,8 +6,21 @@ import { getSession } from "./session";
 const baseUrl = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
 
 export type StreamMeta = { messageId: string; userMessageId?: string; model: string };
-export type RagSource = { documentId: string; revisionId: string | null; chunkId: string; title: string; page: number | null; heading: string | null; excerpt: string };
-export type StreamSources = { messageId: string; sources: RagSource[]; hasSources: boolean; telemetry?: unknown };
+export type RagSource = {
+  documentId: string;
+  revisionId: string | null;
+  chunkId: string;
+  title: string;
+  page: number | null;
+  heading: string | null;
+  excerpt: string;
+};
+export type StreamSources = {
+  messageId: string;
+  sources: RagSource[];
+  hasSources: boolean;
+  telemetry?: unknown;
+};
 export type StreamDone = {
   messageId: string;
   promptTokens: number;

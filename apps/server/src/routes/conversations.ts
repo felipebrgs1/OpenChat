@@ -234,7 +234,9 @@ conversationRoutes.post("/:id/messages", async (c) => {
   let ragSources: ReturnType<typeof toRagSources> = [];
   let knowledgeBlock = "";
   let hasSources = false;
-  let ragTelemetry: Awaited<ReturnType<typeof retrieveKnowledgeChunksWithTelemetry>>["telemetry"] | null = null;
+  let ragTelemetry:
+    | Awaited<ReturnType<typeof retrieveKnowledgeChunksWithTelemetry>>["telemetry"]
+    | null = null;
   if (user.roleId) {
     try {
       const r = await retrieveKnowledgeChunksWithTelemetry(content, user.roleId, 6, {
@@ -254,7 +256,7 @@ conversationRoutes.post("/:id/messages", async (c) => {
         hasSources = false;
         knowledgeBlock = `[SEM FONTE INTERNA CONFIÁVEL]
 Não foi encontrada fonte interna confiável para esta pergunta na base autorizada para este cargo. Se a pergunta for sobre valor, multa, contrato, inadimplência ou dado de aluno, responda exatamente: "Não encontrei fonte interna confiável" e indique o cargo dono do assunto ou como escalar. Não invente.
-`; 
+`;
       }
     } catch (e) {
       console.warn("rag R5 falhou, fallback sem fonte", e);

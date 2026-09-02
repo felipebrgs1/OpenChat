@@ -4,13 +4,7 @@
  * Persiste em rag_evaluation_run + rag_evaluation_result.
  */
 import { asc, eq, sql } from "drizzle-orm";
-import {
-  db,
-  ragEvaluationCases,
-  ragEvaluationResults,
-  ragEvaluationRuns,
-  roles,
-} from "@nexo/db";
+import { db, ragEvaluationCases, ragEvaluationResults, ragEvaluationRuns, roles } from "@nexo/db";
 
 import { embeddingModel } from "./embeddings";
 import { retrieveKnowledgeChunks } from "./rag";
@@ -45,11 +39,16 @@ export async function runRagEvaluation(opts?: {
 }) {
   const pipelineVersion = opts?.pipelineVersion ?? `rag-v1-${Date.now()}`;
   const topK = opts?.topK ?? 6;
-  const cases = await db.select().from(ragEvaluationCases).orderBy(asc(ragEvaluationCases.createdAt));
+  const cases = await db
+    .select()
+    .from(ragEvaluationCases)
+    .orderBy(asc(ragEvaluationCases.createdAt));
   const filtered = opts?.limit ? cases.slice(0, opts.limit) : cases;
 
   if (filtered.length === 0) {
-    throw new Error("Nenhum caso em rag_evaluation_case. Rode bun run --cwd packages/db src/seed-rag.ts");
+    throw new Error(
+      "Nenhum caso em rag_evaluation_case. Rode bun run --cwd packages/db src/seed-rag.ts",
+    );
   }
 
   // resolve slug -> roleId para testes de isolamento
@@ -211,8 +210,16 @@ export async function listRuns(limit = 20) {
 
 export async function compareRuns(runIdA: string, runIdB: string) {
   const [a, b] = await Promise.all([
-    db.select().from(ragEvaluationRuns).where(eq(ragEvaluationRuns.id, runIdA)).then((r) => r[0]),
-    db.select().from(ragEvaluationRuns).where(eq(ragEvaluationRuns.id, runIdB)).then((r) => r[0]),
+    db
+      .select()
+      .from(ragEvaluationRuns)
+      .where(eq(ragEvaluationRuns.id, runIdA))
+      .then((r) => r[0]),
+    db
+      .select()
+      .from(ragEvaluationRuns)
+      .where(eq(ragEvaluationRuns.id, runIdB))
+      .then((r) => r[0]),
   ]);
   if (!a || !b) throw new Error("run não encontrado");
   const aSummary = (a.summary ?? {}) as Record<string, unknown>;

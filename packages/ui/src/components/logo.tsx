@@ -91,12 +91,7 @@ export function OraculoBadge({
 /**
  * Full Oráculo Logo (Icon + Wordmark)
  */
-export function OraculoLogo({
-  variant = "glyph",
-  size,
-  className,
-  ...props
-}: OraculoLogoProps) {
+export function OraculoLogo({ variant = "glyph", size, className, ...props }: OraculoLogoProps) {
   if (variant === "badge") {
     return <OraculoBadge className={className} />;
   }

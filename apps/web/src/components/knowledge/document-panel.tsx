@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@nexo/ui/components/button";
@@ -41,12 +41,13 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
 
   const opsQ = useQuery({
     queryKey: ["ops-panel"],
-    queryFn: () => api<{
-      totalDocs: number;
-      byStatus: Record<string, number>;
-      overdue: Array<{ id: string; title: string; reviewAt: string }>;
-      feedback: { semFonte: number; total: number };
-    }>(opsEndpoint),
+    queryFn: () =>
+      api<{
+        totalDocs: number;
+        byStatus: Record<string, number>;
+        overdue: Array<{ id: string; title: string; reviewAt: string }>;
+        feedback: { semFonte: number; total: number };
+      }>(opsEndpoint),
     enabled: mode === "all",
   });
 
@@ -58,12 +59,13 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
 
   const rolesQ = useQuery({
     queryKey: ["roles-list"],
-    queryFn: () => api<{ roles: RoleRow[] } | RoleRow[]>("/api/roles").then((r) => {
-      // /api/roles returns { roles: [...] } ou array direto dependendo da versão
-      if (Array.isArray(r)) return r as RoleRow[];
-      if ((r as { roles?: RoleRow[] }).roles) return (r as { roles: RoleRow[] }).roles;
-      return [] as RoleRow[];
-    }),
+    queryFn: () =>
+      api<{ roles: RoleRow[] } | RoleRow[]>("/api/roles").then((r) => {
+        // /api/roles returns { roles: [...] } ou array direto dependendo da versão
+        if (Array.isArray(r)) return r as RoleRow[];
+        if ((r as { roles?: RoleRow[] }).roles) return (r as { roles: RoleRow[] }).roles;
+        return [] as RoleRow[];
+      }),
     enabled: true,
   });
 
@@ -74,6 +76,16 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
   const [editRoleIds, setEditRoleIds] = useState<string[]>([]);
   const [editReviewAt, setEditReviewAt] = useState("");
   const [historyDocId, setHistoryDocId] = useState<string | null>(null);
+
+  // reseta o formulário no evento que seleciona o documento (sem setState em effect)
+  const startEditing = (doc: DocRow) => {
+    setEditing(doc);
+    setEditOwner(doc.ownerId ?? "");
+    setEditStatus(doc.status);
+    setEditVisibility((doc.visibility as string) ?? "by_role");
+    setEditRoleIds(doc.roleIds ?? []);
+    setEditReviewAt(doc.reviewAt ? doc.reviewAt.slice(0, 10) : "");
+  };
 
   const docHistoryQ = useQuery({
     queryKey: ["doc-history", historyDocId],
@@ -94,18 +106,18 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
     enabled: !!historyDocId,
   });
 
-  useEffect(() => {
-    if (editing) {
-      setEditOwner(editing.ownerId ?? "");
-      setEditStatus(editing.status);
-      setEditVisibility((editing.visibility as string) ?? "by_role");
-      setEditRoleIds(editing.roleIds ?? []);
-      setEditReviewAt(editing.reviewAt ? editing.reviewAt.slice(0, 10) : "");
-    }
-  }, [editing]);
+  // reseta o formulário quando o documento em edição muda (padrão derivado de prop)
+  // oxlint-disable-next-line set-state-in-effect
 
   const patchMut = useMutation({
-    mutationFn: (payload: { id: string; ownerId?: string; status?: string; visibility?: string; roleIds?: string[]; reviewAt?: string | null }) =>
+    mutationFn: (payload: {
+      id: string;
+      ownerId?: string;
+      status?: string;
+      visibility?: string;
+      roleIds?: string[];
+      reviewAt?: string | null;
+    }) =>
       api(`/api/knowledge/documents/${payload.id}`, {
         method: "PATCH",
         body: JSON.stringify(payload),
@@ -137,7 +149,8 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
       fd.append("file", uploadFile);
       if (uploadTitle.trim()) fd.append("title", uploadTitle.trim());
       fd.append("visibility", uploadVisibility);
-      if (uploadVisibility === "by_role" && uploadRoleIds.length) fd.append("roleIds", JSON.stringify(uploadRoleIds));
+      if (uploadVisibility === "by_role" && uploadRoleIds.length)
+        fd.append("roleIds", JSON.stringify(uploadRoleIds));
       const base = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
       const res = await fetch(`${base}/api/knowledge/${uploadCollection}/upload`, {
         method: "POST",
@@ -176,7 +189,8 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
 
   const collectionsQ = useQuery({
     queryKey: ["knowledge-collections"],
-    queryFn: () => api<{ collections: Array<{ id: string; name: string; slug: string }> }>("/api/knowledge"),
+    queryFn: () =>
+      api<{ collections: Array<{ id: string; name: string; slug: string }> }>("/api/knowledge"),
   });
   const collections = collectionsQ.data?.collections ?? [];
 
@@ -188,7 +202,8 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
   const [uploadRoleIds, setUploadRoleIds] = useState<string[]>([]);
 
   if (docsQ.isLoading) return <div className="p-6 text-sm text-muted-foreground">Carregando…</div>;
-  if (docsQ.isError) return <div className="p-6 text-sm text-destructive">Erro ao carregar documentos</div>;
+  if (docsQ.isError)
+    return <div className="p-6 text-sm text-destructive">Erro ao carregar documentos</div>;
 
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6 space-y-6">
@@ -235,7 +250,11 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-xs sm:col-span-2">
               Coleção *
-              <select value={uploadCollection} onChange={(e) => setUploadCollection(e.target.value)} className="mt-1 w-full rounded-lg border bg-background px-2 py-1.5 text-sm">
+              <select
+                value={uploadCollection}
+                onChange={(e) => setUploadCollection(e.target.value)}
+                className="mt-1 w-full rounded-lg border bg-background px-2 py-1.5 text-sm"
+              >
                 <option value="">— selecione —</option>
                 {collections.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -246,15 +265,29 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
             </label>
             <label className="text-xs">
               Título (opcional)
-              <input value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="ex: Política 2024" className="mt-1 w-full rounded-lg border bg-background px-2 py-1.5 text-sm" />
+              <input
+                value={uploadTitle}
+                onChange={(e) => setUploadTitle(e.target.value)}
+                placeholder="ex: Política 2024"
+                className="mt-1 w-full rounded-lg border bg-background px-2 py-1.5 text-sm"
+              />
             </label>
             <label className="text-xs">
               Arquivo * (pdf, docx, txt, md)
-              <input type="file" accept=".pdf,.docx,.txt,.md,.markdown,.csv,.pptx,.xlsx,.html" onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)} className="mt-1 w-full rounded-lg border bg-background px-2 py-1.5 text-sm" />
+              <input
+                type="file"
+                accept=".pdf,.docx,.txt,.md,.markdown,.csv,.pptx,.xlsx,.html"
+                onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                className="mt-1 w-full rounded-lg border bg-background px-2 py-1.5 text-sm"
+              />
             </label>
             <label className="text-xs">
               Domínio
-              <select value={uploadVisibility} onChange={(e) => setUploadVisibility(e.target.value)} className="mt-1 w-full rounded-lg border bg-background px-2 py-1.5 text-sm">
+              <select
+                value={uploadVisibility}
+                onChange={(e) => setUploadVisibility(e.target.value)}
+                className="mt-1 w-full rounded-lg border bg-background px-2 py-1.5 text-sm"
+              >
                 <option value="by_role">por cargo — só cargos selecionados</option>
                 <option value="all">público — todos os cargos</option>
               </select>
@@ -265,10 +298,14 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
                 <div className="mt-1 grid grid-cols-2 gap-1 rounded-lg border p-2 max-h-32 overflow-y-auto">
                   {roles.map((r) => (
                     <label key={r.id} className="flex items-center gap-1.5 text-xs">
-                      <input type="checkbox" checked={uploadRoleIds.includes(r.id)} onChange={(e) => {
-                        if (e.target.checked) setUploadRoleIds((prev) => [...prev, r.id]);
-                        else setUploadRoleIds((prev) => prev.filter((id) => id !== r.id));
-                      }} />
+                      <input
+                        type="checkbox"
+                        checked={uploadRoleIds.includes(r.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) setUploadRoleIds((prev) => [...prev, r.id]);
+                          else setUploadRoleIds((prev) => prev.filter((id) => id !== r.id));
+                        }}
+                      />
                       <span className="truncate">{r.name}</span>
                     </label>
                   ))}
@@ -277,20 +314,28 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
             ) : null}
           </div>
           <div className="flex gap-2">
-            <Button size="sm" onClick={() => uploadMut.mutate()} disabled={uploadMut.isPending || !uploadCollection || !uploadFile}>
+            <Button
+              size="sm"
+              onClick={() => uploadMut.mutate()}
+              disabled={uploadMut.isPending || !uploadCollection || !uploadFile}
+            >
               {uploadMut.isPending ? "Enviando…" : "Enviar"}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setShowUpload(false)}>
               Fechar
             </Button>
           </div>
-          <p className="text-[11px] text-muted-foreground">Por padrão o dono será você; visibilidade e cargos definem quem recupera no RAG. Status inicial: published.</p>
+          <p className="text-[11px] text-muted-foreground">
+            Por padrão o dono será você; visibilidade e cargos definem quem recupera no RAG. Status
+            inicial: published.
+          </p>
         </div>
       ) : null}
 
       {docs.length === 0 ? (
         <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-          Nenhum documento. {mode === "my" ? "Crie um via upload na base." : "Nenhum documento cadastrado."}
+          Nenhum documento.{" "}
+          {mode === "my" ? "Crie um via upload na base." : "Nenhum documento cadastrado."}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border">
@@ -311,28 +356,44 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
                 <tr key={d.id} className={d.overdue ? "bg-amber-50/50 dark:bg-amber-950/20" : ""}>
                   <td className="px-3 py-2">
                     <div className="font-medium">{d.title}</div>
-                    <div className="text-xs text-muted-foreground truncate max-w-[260px]">{d.filename ?? d.id.slice(0, 8)}</div>
+                    <div className="text-xs text-muted-foreground truncate max-w-[260px]">
+                      {d.filename ?? d.id.slice(0, 8)}
+                    </div>
                   </td>
-                  <td className="px-3 py-2 text-xs">{d.collectionName ?? d.collectionId.slice(0, 8)}</td>
-                  <td className="px-3 py-2 text-xs">{d.ownerEmail ?? d.ownerName ?? d.ownerId?.slice(0, 8) ?? "—"}</td>
                   <td className="px-3 py-2 text-xs">
-                    <span className={`rounded-full px-2 py-0.5 text-xs ${d.visibility === "all" ? "bg-sky-100 text-sky-700" : "bg-violet-100 text-violet-700"}`}>
+                    {d.collectionName ?? d.collectionId.slice(0, 8)}
+                  </td>
+                  <td className="px-3 py-2 text-xs">
+                    {d.ownerEmail ?? d.ownerName ?? d.ownerId?.slice(0, 8) ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 text-xs">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs ${d.visibility === "all" ? "bg-sky-100 text-sky-700" : "bg-violet-100 text-violet-700"}`}
+                    >
                       {d.visibility === "all" ? "público" : "por cargo"}
                     </span>
                     {d.visibility === "by_role" && d.roleIds?.length ? (
-                      <span className="ml-1 text-[11px] text-muted-foreground">({d.roleIds.length} cargos)</span>
+                      <span className="ml-1 text-[11px] text-muted-foreground">
+                        ({d.roleIds.length} cargos)
+                      </span>
                     ) : null}
                   </td>
                   <td className="px-3 py-2">
-                    <span className={`rounded-full px-2 py-0.5 text-xs ${d.status === "published" ? "bg-emerald-100 text-emerald-700" : d.status === "draft" ? "bg-amber-100 text-amber-700" : "bg-zinc-200 text-zinc-600"}`}>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs ${d.status === "published" ? "bg-emerald-100 text-emerald-700" : d.status === "draft" ? "bg-amber-100 text-amber-700" : "bg-zinc-200 text-zinc-600"}`}
+                    >
                       {d.status}
                     </span>
-                    {d.overdue ? <span className="ml-1 text-xs text-amber-600">vencido</span> : null}
+                    {d.overdue ? (
+                      <span className="ml-1 text-xs text-amber-600">vencido</span>
+                    ) : null}
                   </td>
-                  <td className="px-3 py-2 text-xs">{d.reviewAt ? new Date(d.reviewAt).toLocaleDateString("pt-BR") : "—"}</td>
+                  <td className="px-3 py-2 text-xs">
+                    {d.reviewAt ? new Date(d.reviewAt).toLocaleDateString("pt-BR") : "—"}
+                  </td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="xs" onClick={() => setEditing(d)}>
+                      <Button variant="ghost" size="xs" onClick={() => startEditing(d)}>
                         Editar
                       </Button>
                       <Button variant="ghost" size="xs" onClick={() => setHistoryDocId(d.id)}>
@@ -343,7 +404,12 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
                         size="xs"
                         className="text-destructive hover:text-destructive hover:bg-destructive/10"
                         onClick={() => {
-                          if (!confirm(`Remover "${d.title}"? Apaga do pgvector e marca como deletado. Arquivo original fica até retenção.`)) return;
+                          if (
+                            !confirm(
+                              `Remover "${d.title}"? Apaga do pgvector e marca como deletado. Arquivo original fica até retenção.`,
+                            )
+                          )
+                            return;
                           deleteMut.mutate(d.id);
                         }}
                         disabled={deleteMut.isPending}
@@ -360,10 +426,19 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
       )}
 
       {historyDocId ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setHistoryDocId(null)}>
-          <div className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-card p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setHistoryDocId(null)}
+        >
+          <div
+            className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-card p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between">
-              <h3 className="font-medium">Histórico — {docs.find((x) => x.id === historyDocId)?.title ?? historyDocId?.slice(0, 8)}</h3>
+              <h3 className="font-medium">
+                Histórico —{" "}
+                {docs.find((x) => x.id === historyDocId)?.title ?? historyDocId?.slice(0, 8)}
+              </h3>
               <Button variant="ghost" size="xs" onClick={() => setHistoryDocId(null)}>
                 Fechar
               </Button>
@@ -380,14 +455,22 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
                       <span className="font-medium">
                         v{r.revisionNumber} — {r.filename}
                       </span>
-                      <span className={`rounded-full px-2 py-0.5 text-xs ${r.ingestion?.status === "ready" ? "bg-emerald-100 text-emerald-700" : r.ingestion?.status === "failed" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs ${r.ingestion?.status === "ready" ? "bg-emerald-100 text-emerald-700" : r.ingestion?.status === "failed" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}
+                      >
                         {r.ingestion?.status ?? "—"} · {r.ingestion?.stage ?? ""}
                       </span>
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">
-                      {new Date(r.createdAt).toLocaleString("pt-BR")} · {(r.sizeBytes / 1024).toFixed(1)} KB · {r.checksum.slice(0, 8)}… {r.supersededAt ? `· superseded ${new Date(r.supersededAt).toLocaleDateString("pt-BR")}` : "· atual"}
+                      {new Date(r.createdAt).toLocaleString("pt-BR")} ·{" "}
+                      {(r.sizeBytes / 1024).toFixed(1)} KB · {r.checksum.slice(0, 8)}…{" "}
+                      {r.supersededAt
+                        ? `· superseded ${new Date(r.supersededAt).toLocaleDateString("pt-BR")}`
+                        : "· atual"}
                     </div>
-                    {r.ingestion?.errorMessage ? <p className="mt-1 text-xs text-destructive">{r.ingestion.errorMessage}</p> : null}
+                    {r.ingestion?.errorMessage ? (
+                      <p className="mt-1 text-xs text-destructive">{r.ingestion.errorMessage}</p>
+                    ) : null}
                     <div className="mt-2 flex gap-1">
                       <Button
                         variant="outline"
@@ -427,12 +510,18 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
                     </option>
                   ))}
                 </select>
-                <span className="text-[11px] text-muted-foreground">Apenas admin pode transferir dono.</span>
+                <span className="text-[11px] text-muted-foreground">
+                  Apenas admin pode transferir dono.
+                </span>
               </label>
             ) : null}
             <label className="text-xs">
               Status
-              <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)} className="mt-1 w-full rounded-lg border bg-background px-2 py-1.5 text-sm">
+              <select
+                value={editStatus}
+                onChange={(e) => setEditStatus(e.target.value)}
+                className="mt-1 w-full rounded-lg border bg-background px-2 py-1.5 text-sm"
+              >
                 <option value="draft">draft — rascunho (não entra no RAG)</option>
                 <option value="published">published — ativo</option>
                 <option value="obsolete">obsolete — obsoleto</option>
@@ -440,14 +529,23 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
             </label>
             <label className="text-xs">
               Domínio
-              <select value={editVisibility} onChange={(e) => setEditVisibility(e.target.value)} className="mt-1 w-full rounded-lg border bg-background px-2 py-1.5 text-sm">
+              <select
+                value={editVisibility}
+                onChange={(e) => setEditVisibility(e.target.value)}
+                className="mt-1 w-full rounded-lg border bg-background px-2 py-1.5 text-sm"
+              >
                 <option value="all">público — todos os cargos</option>
                 <option value="by_role">por cargo — só cargos selecionados</option>
               </select>
             </label>
             <label className="text-xs">
               Revisão em
-              <input type="date" value={editReviewAt} onChange={(e) => setEditReviewAt(e.target.value)} className="mt-1 w-full rounded-lg border bg-background px-2 py-1.5 text-sm" />
+              <input
+                type="date"
+                value={editReviewAt}
+                onChange={(e) => setEditReviewAt(e.target.value)}
+                className="mt-1 w-full rounded-lg border bg-background px-2 py-1.5 text-sm"
+              />
             </label>
             {editVisibility === "by_role" ? (
               <div className="text-xs sm:col-span-2">
@@ -467,7 +565,11 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
                     </label>
                   ))}
                 </div>
-                {editRoleIds.length === 0 ? <span className="text-[11px] text-amber-600">Nenhum cargo selecionado = só dono+admin</span> : null}
+                {editRoleIds.length === 0 ? (
+                  <span className="text-[11px] text-amber-600">
+                    Nenhum cargo selecionado = só dono+admin
+                  </span>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -496,7 +598,9 @@ export function DocumentPanel({ mode }: { mode: "my" | "all" }) {
                 variant="outline"
                 size="sm"
                 onClick={async () => {
-                  const revs = await api<{ revisions: Array<{ id: string; revisionNumber: number }> }>(`/api/knowledge/documents/${editing.id}/revisions`).catch(() => null);
+                  const revs = await api<{
+                    revisions: Array<{ id: string; revisionNumber: number }>;
+                  }>(`/api/knowledge/documents/${editing.id}/revisions`).catch(() => null);
                   const first = revs?.revisions?.[0];
                   if (!first) return toast.error("Sem histórico");
                   const target = revs.revisions[revs.revisions.length - 1];

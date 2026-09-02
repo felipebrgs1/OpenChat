@@ -17,17 +17,34 @@ function extFromFilename(name: string): string {
   return dot >= 0 ? name.slice(dot).toLowerCase() : "";
 }
 
-async function extractLocal(buffer: Buffer, filename: string, mime: string): Promise<DoclingExtraction> {
+async function extractLocal(
+  buffer: Buffer,
+  filename: string,
+  mime: string,
+): Promise<DoclingExtraction> {
   const ext = extFromFilename(filename);
   const lower = filename.toLowerCase();
 
-  if (ext === ".txt" || ext === ".md" || ext === ".markdown" || ext === ".csv" || ext === ".html" || ext === ".htm") {
+  if (
+    ext === ".txt" ||
+    ext === ".md" ||
+    ext === ".markdown" ||
+    ext === ".csv" ||
+    ext === ".html" ||
+    ext === ".htm"
+  ) {
     const text = buffer.toString("utf-8");
-    if (!text.trim()) throw Object.assign(new Error("Arquivo vazio ou ilegível."), { code: "EMPTY_EXTRACTION" });
+    if (!text.trim())
+      throw Object.assign(new Error("Arquivo vazio ou ilegível."), { code: "EMPTY_EXTRACTION" });
     // para html, tenta extrair texto simples (Docling faria melhor)
     const markdown = ext === ".html" || ext === ".htm" ? htmlToMarkdown(text) : text;
     const headings = extractHeadings(markdown);
-    return { markdown, metadata: { extractor: ext === ".html" ? "html-fallback" : "utf8", ext, headings }, pages: 1, headings };
+    return {
+      markdown,
+      metadata: { extractor: ext === ".html" ? "html-fallback" : "utf8", ext, headings },
+      pages: 1,
+      headings,
+    };
   }
 
   if (ext === ".pdf" || mime === "application/pdf" || lower.endsWith(".pdf")) {
@@ -35,7 +52,9 @@ async function extractLocal(buffer: Buffer, filename: string, mime: string): Pro
     try {
       // @ts-ignore no types
       const mod: unknown = await import("pdf-parse").catch(() => null);
-      const pdfParse = (mod as { default?: (b: Buffer) => Promise<{ text: string; numpages?: number }> })?.default;
+      const pdfParse = (
+        mod as { default?: (b: Buffer) => Promise<{ text: string; numpages?: number }> }
+      )?.default;
       if (pdfParse) {
         const parsed = await pdfParse(buffer);
         const raw = (parsed.text ?? "").trim();
@@ -43,9 +62,19 @@ async function extractLocal(buffer: Buffer, filename: string, mime: string): Pro
           // pode estar escaneado
           const ocrEnabled = process.env.OCR_ENABLED === "true";
           if (ocrEnabled) {
-            throw Object.assign(new Error("PDF escaneado detectado. OCR habilitado mas Docling worker não respondeu."), { code: "PDF_OCR_REQUIRED" });
+            throw Object.assign(
+              new Error(
+                "PDF escaneado detectado. OCR habilitado mas Docling worker não respondeu.",
+              ),
+              { code: "PDF_OCR_REQUIRED" },
+            );
           }
-          throw Object.assign(new Error("PDF sem texto extraível — escaneado sem OCR. Habilite OCR ou envie PDF digital."), { code: "PDF_NO_TEXT" });
+          throw Object.assign(
+            new Error(
+              "PDF sem texto extraível — escaneado sem OCR. Habilite OCR ou envie PDF digital.",
+            ),
+            { code: "PDF_NO_TEXT" },
+          );
         }
         // normaliza para markdown: detecta possíveis títulos em linhas curtas maiúsculas
         const markdown = normalizePdfTextToMarkdown(raw);
@@ -53,28 +82,48 @@ async function extractLocal(buffer: Buffer, filename: string, mime: string): Pro
         const pages = parsed.numpages ?? null;
         // injetar marcadores de página aproximados se houver muitas quebras
         const withPages = injectPageMarkers(markdown, pages);
-        return { markdown: withPages, metadata: { extractor: "pdf-parse", pages, headings }, pages, headings };
+        return {
+          markdown: withPages,
+          metadata: { extractor: "pdf-parse", pages, headings },
+          pages,
+          headings,
+        };
       }
     } catch (e) {
       if ((e as { code?: string })?.code) throw e;
     }
     const fallback = buffer.toString("utf-8").trim();
     if (!fallback || fallback.length < 20 || /%PDF/.test(fallback.slice(0, 10))) {
-      throw Object.assign(new Error("PDF ilegível ou escaneado sem OCR. Use Docling com OCR."), { code: "PDF_UNREADABLE" });
+      throw Object.assign(new Error("PDF ilegível ou escaneado sem OCR. Use Docling com OCR."), {
+        code: "PDF_UNREADABLE",
+      });
     }
-    return { markdown: fallback, metadata: { extractor: "utf8-fallback", ext }, pages: 1, headings: [] };
+    return {
+      markdown: fallback,
+      metadata: { extractor: "utf8-fallback", ext },
+      pages: 1,
+      headings: [],
+    };
   }
 
   if (ext === ".docx") {
     try {
       const mod: unknown = await import("mammoth").catch(() => null);
-      const mammoth = mod as { convertToHtml?: (o: { buffer: Buffer }) => Promise<{ value: string }>; extractRawText?: (o: { buffer: Buffer }) => Promise<{ value: string }> } | null;
+      const mammoth = mod as {
+        convertToHtml?: (o: { buffer: Buffer }) => Promise<{ value: string }>;
+        extractRawText?: (o: { buffer: Buffer }) => Promise<{ value: string }>;
+      } | null;
       if (mammoth?.convertToHtml) {
         const { value: html } = await mammoth.convertToHtml({ buffer });
         const markdown = htmlToMarkdown(html);
         const headings = extractHeadings(markdown);
         if (!markdown.trim()) throw Object.assign(new Error("DOCX vazio."), { code: "DOCX_EMPTY" });
-        return { markdown, metadata: { extractor: "mammoth-html", ext, headings }, pages: 1, headings };
+        return {
+          markdown,
+          metadata: { extractor: "mammoth-html", ext, headings },
+          pages: 1,
+          headings,
+        };
       }
       if (mammoth?.extractRawText) {
         const { value } = await mammoth.extractRawText({ buffer });
@@ -90,18 +139,24 @@ async function extractLocal(buffer: Buffer, filename: string, mime: string): Pro
   if (ext === ".pptx") {
     // placeholder sem lib dedicada — Docling faria nativamente
     throw Object.assign(
-      new Error("PPTX requer Docling worker (python). Configure DOCLING_WORKER_URL ou converta para PDF."),
+      new Error(
+        "PPTX requer Docling worker (python). Configure DOCLING_WORKER_URL ou converta para PDF.",
+      ),
       { code: "PPTX_REQUIRES_DOCLING" },
     );
   }
   if (ext === ".xlsx") {
     throw Object.assign(
-      new Error("XLSX requer Docling worker (python). Configure DOCLING_WORKER_URL ou converta para CSV."),
+      new Error(
+        "XLSX requer Docling worker (python). Configure DOCLING_WORKER_URL ou converta para CSV.",
+      ),
       { code: "XLSX_REQUIRES_DOCLING" },
     );
   }
 
-  throw Object.assign(new Error(`Extração não suportada para ${ext}`), { code: "UNSUPPORTED_EXTRACTION" });
+  throw Object.assign(new Error(`Extração não suportada para ${ext}`), {
+    code: "UNSUPPORTED_EXTRACTION",
+  });
 }
 
 export async function extractWithDocling(
@@ -117,7 +172,9 @@ export async function extractWithDocling(
   try {
     const form = new FormData();
     // @ts-ignore BlobPart dom
-    const blob = new Blob([buffer as unknown as never], { type: mime || "application/octet-stream" });
+    const blob = new Blob([buffer as unknown as never], {
+      type: mime || "application/octet-stream",
+    });
     form.append("file", blob, filename);
     // sinaliza OCR opcional
     const ocr = process.env.OCR_ENABLED === "true" ? "true" : "false";
@@ -140,12 +197,20 @@ export async function extractWithDocling(
     const headings = json.headings ?? extractHeadings(json.markdown);
     return {
       markdown: json.markdown,
-      metadata: { extractor: "docling", workerUrl, ...(json.metadata ?? {}), headings },
+      metadata: {
+        extractor: "docling",
+        workerUrl,
+        ...(json.metadata as Record<string, unknown> | undefined),
+        headings,
+      },
       pages: json.pages ?? null,
       headings,
     };
   } catch (e) {
-    console.warn("Docling worker falhou, fallback local", e instanceof Error ? e.message : String(e));
+    console.warn(
+      "Docling worker falhou, fallback local",
+      e instanceof Error ? e.message : String(e),
+    );
     return extractLocal(buffer, filename, mime);
   }
 }
@@ -153,7 +218,10 @@ export async function extractWithDocling(
 function htmlToMarkdown(html: string): string {
   // conversão simples html→markdown para fallback mammoth
   return html
-    .replace(/<h([1-6])[^>]*>(.*?)<\/h\1>/gi, (_m, lvl: string, t: string) => `${"#".repeat(Number(lvl))} ${stripTags(t).trim()}\n\n`)
+    .replace(
+      /<h([1-6])[^>]*>(.*?)<\/h\1>/gi,
+      (_m, lvl: string, t: string) => `${"#".repeat(Number(lvl))} ${stripTags(t).trim()}\n\n`,
+    )
     .replace(/<li[^>]*>(.*?)<\/li>/gi, (_m, t: string) => `- ${stripTags(t).trim()}\n`)
     .replace(/<p[^>]*>(.*?)<\/p>/gi, (_m, t: string) => `${stripTags(t).trim()}\n\n`)
     .replace(/<br[^>]*>/gi, "\n")
@@ -190,7 +258,9 @@ function normalizePdfTextToMarkdown(raw: string): string {
       continue;
     }
     // ex: "1. Introdução" ou "INTRODUÇÃO" (curta < 60 chars, muitas maiúsculas)
-    const isHeading = /^(\d+(\.\d+)*\s+)?[A-ZÁÂÃÉÊÍÓÔÕÚÇ][A-ZÁÂÃÉÊÍÓÔÕÚÇ\s\-]{8,60}$/.test(trimmed) && trimmed.length < 80;
+    const isHeading =
+      /^(\d+(\.\d+)*\s+)?[A-ZÁÂÃÉÊÍÓÔÕÚÇ][A-ZÁÂÃÉÊÍÓÔÕÚÇ\s-]{8,60}$/.test(trimmed) &&
+      trimmed.length < 80;
     if (isHeading && trimmed.length < 60) {
       out.push(`## ${trimmed}`);
     } else {

@@ -4,13 +4,7 @@ import { ExternalLink, FileText, Flag } from "lucide-react";
 
 import { api } from "@/lib/api";
 
-export function RagSources({
-  sources,
-  hasSources,
-}: {
-  sources: RagSource[];
-  hasSources: boolean;
-}) {
+export function RagSources({ sources, hasSources }: { sources: RagSource[]; hasSources: boolean }) {
   if (!hasSources || sources.length === 0) {
     return (
       <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
@@ -19,7 +13,8 @@ export function RagSources({
           Não encontrei fonte interna confiável
         </span>
         <p className="mt-1 text-xs leading-5 opacity-80">
-          A resposta acima não usou a base interna. Verifique com o cargo dono do assunto antes de agir.
+          A resposta acima não usou a base interna. Verifique com o cargo dono do assunto antes de
+          agir.
         </p>
       </div>
     );
@@ -97,7 +92,13 @@ export function FeedbackBar({
         ["desatualizada", "Desatualizada"],
         ["sem_fonte", "Sem fonte"],
       ].map(([value, label]) => (
-        <Button key={value} variant="ghost" size="xs" className="rounded-full border text-xs" onClick={() => void send(value)}>
+        <Button
+          key={value}
+          variant="ghost"
+          size="xs"
+          className="rounded-full border text-xs"
+          onClick={() => void send(value)}
+        >
           {label}
         </Button>
       ))}

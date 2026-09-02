@@ -44,7 +44,9 @@ function InvitePage() {
           <OraculoBadge size="lg" />
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Aceitar convite</h1>
-            <p className="text-sm text-muted-foreground">Defina nome e senha para entrar no Oráculo.</p>
+            <p className="text-sm text-muted-foreground">
+              Defina nome e senha para entrar no Oráculo.
+            </p>
           </div>
         </div>
         <div className="space-y-1.5">

@@ -57,7 +57,8 @@ export const RAG_CASE_SEEDS: RagCaseSeed[] = [
     tags: ["negativa"],
   },
   {
-    question: "Explique o fluxo de cobrança para um responsável com boleto em atraso de 15 dias. Qual o tom do primeiro contato?",
+    question:
+      "Explique o fluxo de cobrança para um responsável com boleto em atraso de 15 dias. Qual o tom do primeiro contato?",
     category: "procedural",
     allowedRoleSlug: "cobranca",
     expectedCollectionSlug: "como-cobramos",
@@ -242,7 +243,8 @@ export const RAG_CASE_SEEDS: RagCaseSeed[] = [
     tags: ["sigla:boleto"],
   },
   {
-    question: "O que fazer com o código do contrato 2024-COB-001 quando o responsável contesta a multa?",
+    question:
+      "O que fazer com o código do contrato 2024-COB-001 quando o responsável contesta a multa?",
     category: "procedural",
     allowedRoleSlug: "cobranca",
     expectedCollectionSlug: "como-cobramos",
@@ -320,7 +322,8 @@ export const RAG_CASE_SEEDS: RagCaseSeed[] = [
     expectedCollectionSlug: "como-cobramos",
     expectedDocumentTitle: "Regras de cobrança (stub)",
     expectedKeywords: ["multa", "2%"],
-    expectedAnswerCriteria: "Comercial NÃO tem acesso a como-cobramos; retrieval deve retornar vazio.",
+    expectedAnswerCriteria:
+      "Comercial NÃO tem acesso a como-cobramos; retrieval deve retornar vazio.",
     tags: ["isolamento", "cobranca"],
   },
   {

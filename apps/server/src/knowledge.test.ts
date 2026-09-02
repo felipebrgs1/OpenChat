@@ -145,6 +145,70 @@ describe("lote 4 — knowledge por cargo", () => {
     expect((after.data.documents as unknown[]).length).toBe(0);
   });
 
+  it("doc restrito por cargo no documento não aparece nem para quem tem acesso à coleção (ACL unificada)", async () => {
+    const adminToken = await login(adminEmail, adminPassword);
+    const suporte = (await db.select().from(roles).where(eq(roles.slug, "suporte")))[0];
+    const cobranca = (await db.select().from(roles).where(eq(roles.slug, "cobranca")))[0];
+    if (!suporte || !cobranca) throw new Error("cargos seed não encontrados");
+
+    const created = await request("/api/knowledge", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        slug: `teste-acl-${Date.now()}`,
+        name: "Base ACL",
+        visibility: "by_role",
+        roleIds: [suporte.id],
+      },
+    });
+    expect(created.status).toBe(200);
+    const collectionId = created.data.id as string;
+
+    // doc público no nível do documento (default: segue o público da coleção)
+    const docA = await request(`/api/knowledge/${collectionId}/documents`, {
+      method: "POST",
+      token: adminToken,
+      body: { title: "Doc público", bodyMd: "conteúdo A" },
+    });
+    expect(docA.status).toBe(200);
+    // doc restrito explicitamente ao cargo cobranca
+    const docB = await request(`/api/knowledge/${collectionId}/documents`, {
+      method: "POST",
+      token: adminToken,
+      body: {
+        title: "Doc restrito",
+        bodyMd: "conteúdo B",
+        visibility: "by_role",
+        roleIds: [cobranca.id],
+      },
+    });
+    expect(docB.status).toBe(200);
+
+    const suporteToken = await createUserWithRole("suporte");
+    const detail = await request(`/api/knowledge/${collectionId}`, { token: suporteToken });
+    expect(detail.status).toBe(200);
+    const titles = (detail.data.documents as { title: string }[]).map((d) => d.title);
+    expect(titles).toContain("Doc público");
+    expect(titles).not.toContain("Doc restrito");
+    // contagem de documentos também reflete a política
+    expect(detail.data.documentCount).toBe(1);
+
+    // dono vê o próprio doc restrito mesmo sem o cargo vinculado ao doc (coberto
+    // unitariamente em acl.test.ts); aqui validamos o PATCH de visibility pelo
+    // endpoint unificado (o handler duplicado/ morto foi removido)
+    const restrictedDocId = (docB.data as { id: string }).id;
+    // PATCH com visibility pelo endpoint unificado (código morto removido)
+    const patched = await request(`/api/knowledge/documents/${restrictedDocId}`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { visibility: "all" },
+    });
+    expect(patched.status).toBe(200);
+    const afterAll = await request(`/api/knowledge/${collectionId}`, { token: suporteToken });
+    const titlesAfter = (afterAll.data.documents as { title: string }[]).map((d) => d.title);
+    expect(titlesAfter).toContain("Doc restrito");
+  });
+
   it("assemblePrompt injeta [CONHECIMENTO] com cap de tokens", async () => {
     const { assemblePrompt } = await import("./lib/prompt");
     const { buildKnowledgeBlock } = await import("./lib/knowledge");
@@ -154,7 +218,8 @@ describe("lote 4 — knowledge por cargo", () => {
     }
     const block = await buildKnowledgeBlock(cobranca.id);
     expect(block).toContain("[CONHECIMENTO]");
-    expect(block).toContain("Como cobramos");
+    // título do doc seed da coleção como-cobramos (estável; corpo pode ser editado)
+    expect(block).toContain("Regras de cobrança");
 
     const assembled = assemblePrompt({
       globalSystemPrompt: "global",

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { db as defaultDb } from "./index";
 import {
@@ -165,13 +165,28 @@ export async function seed(db = defaultDb) {
         bodyMd: docSeed.bodyMd,
         sourceType: "markdown",
         checksum: Bun.SHA256.hash(docSeed.bodyMd, "hex"),
+        // docs de seed seguem o público da coleção; restrição por documento é explícita
+        visibility: "all",
       });
     }
   }
 
+  // Backfill ACL unificada (R6): docs legados com visibility 'by_role' e NENHUM
+  // cargo vinculado ficariam invisíveis para todos (exceto admin/dono) na nova
+  // política. Passam a seguir o público da coleção. Idempotente: docs com
+  // vínculo de cargo não são tocados.
+  await db.execute(
+    sql`UPDATE knowledge_document kd SET visibility = 'all'
+        WHERE kd.visibility = 'by_role'
+          AND NOT EXISTS (SELECT 1 FROM knowledge_document_role kdr WHERE kdr.document_id = kd.id)`,
+  );
+
   // R1: base de avaliação
   for (const c of RAG_CASE_SEEDS) {
-    const exists = (await db.select().from(ragEvaluationCases).then((rows) => rows.find((r) => r.question === c.question)));
+    const exists = await db
+      .select()
+      .from(ragEvaluationCases)
+      .then((rows) => rows.find((r) => r.question === c.question));
     if (exists) continue;
     await db.insert(ragEvaluationCases).values({
       question: c.question,

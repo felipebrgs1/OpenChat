@@ -32,7 +32,7 @@ Acesse **http://localhost:5173**.
 
 - **API**: http://localhost:3001/api/health
 - **Postgres**: `localhost:5434` (db `nexo`)
-- **MinIO (storage)**: `localhost:9000` — `docker compose up rustfs` se for usar uploads
+- **RustFS (storage S3)**: `localhost:9000` — `docker compose up rustfs` se for usar uploads
 
 O `.env` vive **só na raiz**. Apps não têm `.env`.
 
@@ -70,35 +70,35 @@ Sem o worker, o server usa fallback local (`pdf-parse`/`mammoth`). OCR opcional 
 
 JWT: `Authorization: Bearer <access_token>` (15m) + refresh (7d). Sem cookie de sessão.
 
-| var | efeito |
-| --- | --- |
+| var                                              | efeito                                         |
+| ------------------------------------------------ | ---------------------------------------------- |
 | `AUTH_DISABLED=true` + `VITE_AUTH_DISABLED=true` | entra direto como admin bootstrap (padrão dev) |
-| ambas `false` | login obrigatório em `/login` |
+| ambas `false`                                    | login obrigatório em `/login`                  |
 
 ## Configuração principal (.env)
 
-| bloco | vars |
-| --- | --- |
-| Base | `PORT`, `CORS_ORIGIN`, `DATABASE_URL`, `VITE_SERVER_URL` |
-| Auth | `JWT_SECRET`, `JWT_ACCESS_TTL`, `JWT_REFRESH_TTL`, `BOOTSTRAP_ADMIN_*` |
-| LLM | `OPENROUTER_API_KEY` (obrigatória para gerar e para embeddings), `OPENROUTER_BASE_URL` |
-| RAG | `EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS`, `RERANKER_*` |
-| Storage | `S3_*` (MinIO em dev, RustFS em prod), `MAX_UPLOAD_BYTES` |
-| Docling | `DOCLING_WORKER_URL`, `OCR_ENABLED` |
+| bloco   | vars                                                                                   |
+| ------- | -------------------------------------------------------------------------------------- |
+| Base    | `PORT`, `CORS_ORIGIN`, `DATABASE_URL`, `VITE_SERVER_URL`                               |
+| Auth    | `JWT_SECRET`, `JWT_ACCESS_TTL`, `JWT_REFRESH_TTL`, `BOOTSTRAP_ADMIN_*`                 |
+| LLM     | `OPENROUTER_API_KEY` (obrigatória para gerar e para embeddings), `OPENROUTER_BASE_URL` |
+| RAG     | `EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS`, `RERANKER_*`                                |
+| Storage | `S3_*` (RustFS, padrão), `R2_*` + `STORAGE_DRIVER` (R2 opcional), `MAX_UPLOAD_BYTES`   |
+| Docling | `DOCLING_WORKER_URL`, `OCR_ENABLED`                                                    |
 
 ## Scripts
 
-| comando | o que faz |
-| --- | --- |
-| `bun run dev` | web :5173 + server :3001 |
-| `bun run dev:web` / `dev:server` | um processo só |
-| `bun run check-types` | TypeScript em todos os workspaces |
-| `bun run check` | Oxlint + Oxfmt (`--write`) |
-| `bun run test` | testes do server (bun test: auth, chat, knowledge, governance, pi-harness) |
-| `bun run db:start/stop/down` | Postgres no Docker |
-| `bun run db:generate` / `db:migrate` | migration Drizzle (após mudar o schema) |
-| `bun run db:push` / `db:seed` | dev: sync do schema / cargos, prompt global, admin |
-| `bun run docker:up` | stack completa (web + server + postgres) |
+| comando                              | o que faz                                                                  |
+| ------------------------------------ | -------------------------------------------------------------------------- |
+| `bun run dev`                        | web :5173 + server :3001                                                   |
+| `bun run dev:web` / `dev:server`     | um processo só                                                             |
+| `bun run check-types`                | TypeScript em todos os workspaces                                          |
+| `bun run check`                      | Oxlint + Oxfmt (`--write`)                                                 |
+| `bun run test`                       | testes do server (bun test: auth, chat, knowledge, governance, pi-harness) |
+| `bun run db:start/stop/down`         | Postgres no Docker                                                         |
+| `bun run db:generate` / `db:migrate` | migration Drizzle (após mudar o schema)                                    |
+| `bun run db:push` / `db:seed`        | dev: sync do schema / cargos, prompt global, admin                         |
+| `bun run docker:up`                  | stack completa (web + server + postgres)                                   |
 
 ⚠️ Não rode `bun run dev` e `bun run docker:up` juntos: as portas 5173 e 3001 colidem.
 
@@ -122,6 +122,6 @@ JWT: `Authorization: Bearer <access_token>` (15m) + refresh (7d). Sem cookie de 
 ## Solução de problemas
 
 - **Chat responde erro de upstream** → falta `OPENROUTER_API_KEY`.
-- **Upload falha ao ingerir** → confira Rustfs (`docker compose up rustfs`) e a chave OpenRouter; PDF escaneado precisa de OCR (`OCR_ENABLED=true` + Docling).
+- **Upload falha ao ingerir** → confira o RustFS (`docker compose up rustfs`) e a chave OpenRouter; PDF escaneado precisa de OCR (`OCR_ENABLED=true` + Docling).
 - **Porta em uso** → algo já roda em 5173/3001 (dev vs docker).
 - **Reset total do banco** → `bun run db:down -v` e rode o setup de novo.

@@ -120,7 +120,8 @@ export function ChatThread({
           onSources: (src) => {
             setLive((current) =>
               (current ?? []).map((row) =>
-                row.id === (src.messageId === assistantId ? assistantId : row.id) || row.id === assistantId
+                row.id === (src.messageId === assistantId ? assistantId : row.id) ||
+                row.id === assistantId
                   ? { ...row, sources: src.sources as never, hasSources: src.hasSources as never }
                   : row,
               ),
@@ -263,19 +264,35 @@ export function ChatThread({
                       {/* R5 — fontes estruturadas + estado sem fonte */}
                       {Array.isArray((message as unknown as { sources?: unknown }).sources) ? (
                         <RagSources
-                          sources={(message as unknown as { sources: import("@nexo/contracts").RagSource[] }).sources}
-                          hasSources={((message as unknown as { sources: import("@nexo/contracts").RagSource[] }).sources.length ?? 0) > 0}
+                          sources={
+                            (
+                              message as unknown as {
+                                sources: import("@nexo/contracts").RagSource[];
+                              }
+                            ).sources
+                          }
+                          hasSources={
+                            ((
+                              message as unknown as {
+                                sources: import("@nexo/contracts").RagSource[];
+                              }
+                            ).sources.length ?? 0) > 0
+                          }
                         />
                       ) : (message as unknown as { hasSources?: boolean }).hasSources === false ? (
                         <RagSources sources={[]} hasSources={false} />
                       ) : null}
                       {!isUser && message.content && !isLastAssistant ? (
                         feedbackDone[message.id] ? (
-                          <p className="mt-2 text-xs text-muted-foreground">Obrigado pelo feedback!</p>
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Obrigado pelo feedback!
+                          </p>
                         ) : (
                           <FeedbackBar
                             messageId={message.id}
-                            onFeedback={(rating) => setFeedbackDone((prev) => ({ ...prev, [message.id]: rating }))}
+                            onFeedback={(rating) =>
+                              setFeedbackDone((prev) => ({ ...prev, [message.id]: rating }))
+                            }
                           />
                         )
                       ) : null}

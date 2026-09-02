@@ -1,5 +1,11 @@
 import { and, desc, eq, exists, inArray, isNull, or } from "drizzle-orm";
-import { db, knowledgeCollections, knowledgeDocuments, knowledgeRoles } from "@nexo/db";
+import {
+  db,
+  knowledgeCollections,
+  knowledgeDocumentRoles,
+  knowledgeDocuments,
+  knowledgeRoles,
+} from "@nexo/db";
 
 export const KNOWLEDGE_TOKEN_CAP = 4000;
 
@@ -72,6 +78,42 @@ export async function loadDocuments(collectionIds: string[]) {
 }
 
 /**
+ * Docs legíveis no nível de documento para um cargo (sem usuário — drafts
+ * ficam sempre de fora; o dono consulta o próprio doc pela API/RAG).
+ * Mesma política de lib/acl.ts: coleção AND (doc 'all' OU cargo do doc).
+ */
+export async function loadDocumentsForRole(collectionIds: string[], roleId: string) {
+  if (collectionIds.length === 0) {
+    return [];
+  }
+  return db
+    .select()
+    .from(knowledgeDocuments)
+    .where(
+      and(
+        inArray(knowledgeDocuments.collectionId, collectionIds),
+        isNull(knowledgeDocuments.deletedAt),
+        eq(knowledgeDocuments.status, "published"),
+        or(
+          eq(knowledgeDocuments.visibility, "all"),
+          exists(
+            db
+              .select({ one: knowledgeDocumentRoles.documentId })
+              .from(knowledgeDocumentRoles)
+              .where(
+                and(
+                  eq(knowledgeDocumentRoles.documentId, knowledgeDocuments.id),
+                  eq(knowledgeDocumentRoles.roleId, roleId),
+                ),
+              ),
+          ),
+        ),
+      ),
+    )
+    .orderBy(desc(knowledgeDocuments.updatedAt));
+}
+
+/**
  * Docs do cargo em ordem updated_at desc, docs inteiros até caber no cap
  * (NEXO.md §14 lote 4: cap 4k tokens, sem RAG).
  */
@@ -80,7 +122,11 @@ export async function buildKnowledgeBlock(roleId: string) {
   if (collections.length === 0) {
     return "";
   }
-  const docs = await loadDocuments(collections.map((c) => c.id));
+  // política única de documento: 'all' ou cargo vinculado; drafts não saem aqui
+  const docs = await loadDocumentsForRole(
+    collections.map((c) => c.id),
+    roleId,
+  );
   if (docs.length === 0) {
     return "";
   }

@@ -162,7 +162,12 @@ export const messages = pgTable(
   (table) => [index("message_conversation_created_idx").on(table.conversationId, table.createdAt)],
 );
 
-export const feedbackRatingEnum = pgEnum("feedback_rating", ["util", "incorreta", "desatualizada", "sem_fonte"]);
+export const feedbackRatingEnum = pgEnum("feedback_rating", [
+  "util",
+  "incorreta",
+  "desatualizada",
+  "sem_fonte",
+]);
 
 export const knowledgeFeedback = pgTable(
   "knowledge_feedback",

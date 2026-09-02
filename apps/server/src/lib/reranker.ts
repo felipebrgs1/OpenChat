@@ -13,7 +13,10 @@ export type RerankResult = {
 };
 
 function lexicalScore(query: string, chunk: RagChunk): number {
-  const qTerms = query.toLowerCase().split(/\s+/).filter((t) => t.length >= 3);
+  const qTerms = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length >= 3);
   const text = `${chunk.heading ?? ""} ${chunk.content}`.toLowerCase();
   if (qTerms.length === 0) return 0;
   let hits = 0;
@@ -31,7 +34,10 @@ function lexicalScore(query: string, chunk: RagChunk): number {
 }
 
 async function voyageRerank(query: string, chunks: RagChunk[]): Promise<RerankResult[] | null> {
-  const apiKey = process.env.VOYAGE_API_KEY?.trim() || process.env.COHERE_API_KEY?.trim() || process.env.RERANKER_API_KEY?.trim();
+  const apiKey =
+    process.env.VOYAGE_API_KEY?.trim() ||
+    process.env.COHERE_API_KEY?.trim() ||
+    process.env.RERANKER_API_KEY?.trim();
   const model = process.env.RERANKER_MODEL?.trim() || "voyageai/rerank-2.5-lite";
   if (!apiKey) return null;
   // Voyage rerank API (OpenAI compatível) — https://docs.voyageai.com/reference/reranking
@@ -39,7 +45,9 @@ async function voyageRerank(query: string, chunks: RagChunk[]): Promise<RerankRe
   const isVoyage = model.includes("voyage") || !!process.env.VOYAGE_API_KEY;
   const url = isVoyage ? "https://api.voyageai.com/v1/rerank" : "https://api.cohere.com/v1/rerank";
   try {
-    const docs = chunks.map((c) => `${c.heading ? `# ${c.heading}\n` : ""}${c.content}`.slice(0, 4000));
+    const docs = chunks.map((c) =>
+      `${c.heading ? `# ${c.heading}\n` : ""}${c.content}`.slice(0, 4000),
+    );
     const res = await fetch(url, {
       method: "POST",
       headers: {
@@ -57,10 +65,15 @@ async function voyageRerank(query: string, chunks: RagChunk[]): Promise<RerankRe
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      console.warn(`reranker ${isVoyage ? "voyage" : "cohere"} ${res.status}: ${body.slice(0, 300)}`);
+      console.warn(
+        `reranker ${isVoyage ? "voyage" : "cohere"} ${res.status}: ${body.slice(0, 300)}`,
+      );
       return null;
     }
-    const json = (await res.json()) as { results?: Array<{ index: number; relevance_score: number }>; data?: Array<{ index: number; relevance_score: number }> };
+    const json = (await res.json()) as {
+      results?: Array<{ index: number; relevance_score: number }>;
+      data?: Array<{ index: number; relevance_score: number }>;
+    };
     const results = json.results ?? json.data;
     if (!results?.length) return null;
     const byIndex = new Map(results.map((r) => [r.index, r.relevance_score]));
@@ -72,7 +85,10 @@ async function voyageRerank(query: string, chunks: RagChunk[]): Promise<RerankRe
       }))
       .sort((a, b) => b.rerankScore - a.rerankScore);
   } catch (e) {
-    console.warn("cohere rerank failed, fallback heuristic", e instanceof Error ? e.message : String(e));
+    console.warn(
+      "cohere rerank failed, fallback heuristic",
+      e instanceof Error ? e.message : String(e),
+    );
     return null;
   }
 }
@@ -84,23 +100,33 @@ async function openRouterRerank(query: string, chunks: RagChunk[]): Promise<Rera
   // OpenRouter rerank (se suportado) — formato similar ao Cohere via OpenRouter
   // https://openrouter.ai/docs/models/cohere/rerank
   try {
-    const docs = chunks.map((c) => `${c.heading ? `# ${c.heading}\n` : ""}${c.content}`.slice(0, 4000));
-    const res = await fetch(`${process.env.OPENROUTER_BASE_URL?.replace(/\/$/, "") ?? "https://openrouter.ai/api/v1"}/rerank`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        "HTTP-Referer": process.env.OPENROUTER_HTTP_REFERER ?? "http://localhost:5173",
-        "X-Title": process.env.OPENROUTER_APP_TITLE ?? "Oráculo",
+    const docs = chunks.map((c) =>
+      `${c.heading ? `# ${c.heading}\n` : ""}${c.content}`.slice(0, 4000),
+    );
+    const res = await fetch(
+      `${process.env.OPENROUTER_BASE_URL?.replace(/\/$/, "") ?? "https://openrouter.ai/api/v1"}/rerank`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+          "HTTP-Referer": process.env.OPENROUTER_HTTP_REFERER ?? "http://localhost:5173",
+          "X-Title": process.env.OPENROUTER_APP_TITLE ?? "Oráculo",
+        },
+        body: JSON.stringify({ model, query, documents: docs }),
+        signal: AbortSignal.timeout(8000),
       },
-      body: JSON.stringify({ model, query, documents: docs }),
-      signal: AbortSignal.timeout(8000),
-    });
+    );
     if (!res.ok) return null;
-    const json = (await res.json()) as { data?: Array<{ index: number; relevance_score: number }>; results?: Array<{ index: number; relevance_score: number }> };
+    const json = (await res.json()) as {
+      data?: Array<{ index: number; relevance_score: number }>;
+      results?: Array<{ index: number; relevance_score: number }>;
+    };
     const results = json.data ?? json.results;
     if (!results?.length) return null;
-    const byIndex = new Map(results.map((r: { index: number; relevance_score: number }) => [r.index, r.relevance_score]));
+    const byIndex = new Map(
+      results.map((r: { index: number; relevance_score: number }) => [r.index, r.relevance_score]),
+    );
     return chunks
       .map((chunk, idx) => ({
         chunk,
@@ -163,22 +189,33 @@ export function hasSufficientEvidence(chunks: RagChunk[], threshold = 0.018): bo
   return true;
 }
 
-export function hasSufficientEvidenceForQuery(query: string, chunks: RagChunk[], threshold = 0.018): boolean {
+export function hasSufficientEvidenceForQuery(
+  query: string,
+  chunks: RagChunk[],
+  threshold = 0.018,
+): boolean {
   if (chunks.length === 0) return false;
   // exceções que devem ser consideradas suficientes mesmo se hasSufficient falhar (ex: curriculo, siglas raras)
   const qLowerEarly = query.toLowerCase();
   if (qLowerEarly.includes("curriculo") || qLowerEarly.includes("currículo")) {
-    const anyCurriculoEarly = chunks.slice(0, 3).some((c) => ((c as unknown as { title?: string }).title ?? "").toLowerCase().includes("curriculo") || ((c as unknown as { title?: string }).title ?? "").toLowerCase().includes("currículo"));
+    const anyCurriculoEarly = chunks
+      .slice(0, 3)
+      .some(
+        (c) =>
+          ((c as unknown as { title?: string }).title ?? "").toLowerCase().includes("curriculo") ||
+          ((c as unknown as { title?: string }).title ?? "").toLowerCase().includes("currículo"),
+      );
     if (anyCurriculoEarly) return true;
   }
   // siglas/códigos raros: se query tem termo raro e top3 contém, considera suficiente mesmo com distância alta
-  const rareTermsEarly = query.match(/\b[A-Z]{2,}(?:[-_][A-Z0-9]+)*\b|\b\d[\d\-\/\.]*\b/g) ?? [];
+  const rareTermsEarly = query.match(/\b[A-Z]{2,}(?:[-_][A-Z0-9]+)*\b|\b\d[\d./-]*\b/g) ?? [];
   if (rareTermsEarly.length > 0) {
     const rareUpperEarly = rareTermsEarly.map((t) => t.toUpperCase());
     for (const term of rareUpperEarly) {
       if (term.length < 2) continue;
       const anyTop3Has = chunks.slice(0, 3).some((c) => {
-        const t = `${(c as unknown as { title?: string }).title ?? ""} ${c.heading ?? ""} ${c.content}`.toLowerCase();
+        const t =
+          `${(c as unknown as { title?: string }).title ?? ""} ${c.heading ?? ""} ${c.content}`.toLowerCase();
         return t.includes(term.toLowerCase());
       });
       if (anyTop3Has) return true;
@@ -187,16 +224,18 @@ export function hasSufficientEvidenceForQuery(query: string, chunks: RagChunk[],
   if (!hasSufficientEvidence(chunks, threshold)) return false;
   const top = chunks[0]!;
   // inclui título para casos como "curriculo" onde o título é a melhor pista
-  const text = `${(top as unknown as { title?: string }).title ?? ""} ${top.heading ?? ""} ${top.content}`.toLowerCase();
+  const text =
+    `${(top as unknown as { title?: string }).title ?? ""} ${top.heading ?? ""} ${top.content}`.toLowerCase();
   // termos raros: siglas 2+ maiúsculas, códigos com hífen/dígitos, números com símbolo
-  const rareTerms = query.match(/\b[A-Z]{2,}(?:[-_][A-Z0-9]+)*\b|\b\d[\d\-\/\.]*\b/g) ?? [];
+  const rareTerms = query.match(/\b[A-Z]{2,}(?:[-_][A-Z0-9]+)*\b|\b\d[\d./-]*\b/g) ?? [];
   // também captura "CNPJ", "PIX" etc (uppercase)
   const rareUpper = rareTerms.map((t) => t.toUpperCase());
   // se query contém raro (ex: CNPJ, PIX, 2024-COB-001) e top não contém, insuficiente
   for (const term of rareUpper) {
     if (term.length < 2) continue;
     // ignora termos muito comuns que coincidem com stopwords? CNPJ/PIX são raros, mantém
-    const inTop = text.includes(term.toLowerCase()) || text.includes(term.toLowerCase().replace(/-/g, ""));
+    const inTop =
+      text.includes(term.toLowerCase()) || text.includes(term.toLowerCase().replace(/-/g, ""));
     if (!inTop) {
       // verifica se algum chunk nos top3 contém o termo — se sim, considera suficiente mesmo se top não
       const anyTop3Has = chunks.slice(0, 3).some((c) => {
@@ -209,11 +248,20 @@ export function hasSufficientEvidenceForQuery(query: string, chunks: RagChunk[],
   // exceção: se query é sobre "curriculo" e top é do documento de currículo, considera suficiente mesmo com baixa sobreposição lexical (pergunta subjetiva "o que acha")
   const qLower = query.toLowerCase();
   if (qLower.includes("curriculo") || qLower.includes("currículo")) {
-    const anyCurriculo = chunks.slice(0, 3).some((c) => ((c as unknown as { title?: string }).title ?? "").toLowerCase().includes("curriculo") || (c as unknown as { title?: string }).title?.toLowerCase().includes("currículo"));
+    const anyCurriculo = chunks
+      .slice(0, 3)
+      .some(
+        (c) =>
+          ((c as unknown as { title?: string }).title ?? "").toLowerCase().includes("curriculo") ||
+          (c as unknown as { title?: string }).title?.toLowerCase().includes("currículo"),
+      );
     if (anyCurriculo) return true;
   }
   // fallback: se query tem 3+ termos e top cobre <20% dos termos, insuficiente (mais permissivo para "o que acha")
-  const qTerms = query.toLowerCase().split(/\s+/).filter((t) => t.length >= 3);
+  const qTerms = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length >= 3);
   if (qTerms.length >= 3) {
     let hits = 0;
     for (const t of qTerms) if (text.includes(t)) hits++;

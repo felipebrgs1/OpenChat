@@ -141,7 +141,12 @@ export function chunkStructuredMarkdown(
   const mergedSections: Section[] = [];
   for (const sec of sections) {
     const last = mergedSections[mergedSections.length - 1];
-    if (last && last.content.length < 500 && sec.content.length < 700 && last.content.length + sec.content.length < charsTargetMax + 800) {
+    if (
+      last &&
+      last.content.length < 500 &&
+      sec.content.length < 700 &&
+      last.content.length + sec.content.length < charsTargetMax + 800
+    ) {
       // une ao anterior (mantém heading do primeiro)
       mergedSections[mergedSections.length - 1] = {
         ...last,
