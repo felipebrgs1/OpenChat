@@ -64,6 +64,35 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Worker dedicado de ingestão — fila durável no Postgres (SKIP LOCKED).
+  # Réplicas ilimitadas sem risco de processar o mesmo job. Migrations não são
+  # necessárias (sem tabela nova); rode bun run db:migrate no deploy antes de subir.
+  worker:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    init: true
+    command: ["bun", "src/worker.ts"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/nexo
+      S3_ENDPOINT: http://rustfs:9000
+      S3_BUCKET: ${S3_BUCKET:-nexo-private}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-nexo}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-nexo12345}
+      S3_REGION: us-east-1
+      S3_FORCE_PATH_STYLE: "true"
+      STORAGE_DIR: /data/storage
+      DOCLING_WORKER_URL: http://docling-worker:8001
+      OCR_ENABLED: ${OCR_ENABLED:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   # R3 — Docling worker (Python) para extração estruturada PDF/DOCX/PPTX/XLSX/HTML.
   # Opcional em dev (fallback local via pdf-parse/mammoth). Em produção, ligar com --profile docling.
   docling-worker:
